@@ -1,0 +1,15 @@
+# Downloaded open data (fetch with data/fetch_opendata.py; can be large)
+/data/dimuon.csv
+/data/MuRun2010B.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# TouchDesigner backups / temp
+*.toe.*
+Backup/
+*.tox.bak

@@ -1,0 +1,5 @@
+# Development / testing only. TouchDesigner ships its own Python + numpy, so
+# you do NOT need to install anything to use these scripts inside TD.
+# These are for running the test suite outside TouchDesigner.
+numpy>=1.23
+pytest>=7.0

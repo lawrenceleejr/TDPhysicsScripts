@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pip install -q numpy pytest >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
