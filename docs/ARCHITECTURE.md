@@ -104,12 +104,21 @@ If you'd rather build a scene by hand (or a builder hits a version quirk):
    the per-track `Cd` colours).
 3. **Camera** + **Render TOP** → bloom → **Null TOP** `out`.
 
-### The switcher (build_all)
+### The switcher / crossfader (build_all)
 
-Feed every scene's `out` into a **Switch TOP**; drive its `index` with a custom
-`Scene` menu; finish with a **Null TOP**. Set each scene's `Active` parameter to
-an expression that's true only for the selected index (or when `Freerun All`
-is on).
+Two **Switch TOP** "decks" each pick a scene `out` (deck A driven by the
+`Scene` menu, deck B by `Nextscene`), and a **Cross TOP** blends them by the
+`Crossfade` parameter (`cross = 0` shows A, `1` shows B). A **Parameter Execute
+DAT** watches the `Cut` pulse and commits a transition (copies B→A, resets the
+fader). Each scene's `Active` is true only while its deck contributes:
+
+```
+(Scene==i and Crossfade<1) or (Nextscene==i and Crossfade>0) or FreerunAll
+```
+
+so a single sim runs in steady state and both run only mid-fade. For a plain
+instant-only switcher, drop deck B + the Cross TOP and drive one Switch TOP's
+`index` from `Scene`.
 
 ## Going further
 
@@ -117,7 +126,7 @@ is on).
   great on N-Body and Flow.
 * **Point sprites:** for very high particle counts, instance a single point with
   a Point Sprite MAT (a textured glow dot) instead of a sphere.
-* **Crossfades:** replace the Switch TOP with a **Cross TOP** (or a chain) to
-  blend between scenes during transitions. Note both scenes cook while blending.
+* **Crossfades:** built in via the A/B decks + Cross TOP (see above). For more
+  than two simultaneous layers, chain additional Cross TOPs.
 * **HUD:** the Open Data scene stores `invariant_mass` on its SOP — read it with
   a Text TOP/CHOP for a live readout.

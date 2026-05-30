@@ -68,7 +68,8 @@ install needed to *use* these scripts).
    ```
    Right-click the DAT → **Run**. A `PhysicsVJ` component appears.
 4. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
-   mode), and change the **`Scene`** parameter to switch visuals.
+   mode), and change the **`Scene`** parameter to switch visuals — or set
+   **`Nextscene`** and ride **`Crossfade`** to blend between two.
 
 > Prefer not to edit paths? Set the environment variable
 > `TD_PHYSICS_REPO=/full/path/to/TDPhysicsScripts` and use the ready-made
@@ -105,8 +106,12 @@ cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 mass is stored on the SOP (`op('.../sim').fetch('invariant_mass')`) so you can
 drive a HUD from it.
 
-**`PhysicsVJ` top level** — `Scene` (the live selector) and `Freerun All`.
-Each scene also has an `Orbit` (deg/sec) camera-spin control.
+**`PhysicsVJ` top level** — a DJ-style A/B crossfader:
+`Scene` (deck A / instant cut), `Nextscene` (deck B), `Crossfade` (0 = A,
+1 = B), a `Cut To B` button to commit a transition, and `Freerun All`. Snap
+`Crossfade` for a hard cut or ride it for a smooth blend; only the decks that
+actually contribute to the mix cook (so it's a single live sim except
+mid-fade). Each scene also has an `Orbit` (deg/sec) camera-spin control.
 
 Palettes: `inferno`, `magma`, `plasma`, `cyber`, `synth`, `acid`, `ice` — all
 tuned to glow on black.

@@ -425,41 +425,86 @@ def build_all(dest=None, name="PhysicsVJ"):
     dest = dest or op("/")  # noqa: F821
     base = _create(dest, "baseCOMP", name)
 
-    # Top-level controls.
-    page = base.appendCustomPage("PhysicsVJ")
-    scene_par = page.appendMenu("Scene")[0]
+    # Top-level controls: an A/B deck pair + crossfader (DJ style).
+    #   Scene      -> deck A (the live cut / instant switch)
+    #   Nextscene  -> deck B (what you crossfade toward)
+    #   Crossfade  -> 0 = all A, 1 = all B
+    # A hard cut is just snapping Crossfade; a smooth blend is riding it.
+    menu_names = [s[1].replace("build_", "") + str(i) for i, s in enumerate(SCENES)]
     labels = [s[0] for s in SCENES]
-    scene_par.menuNames = [s[1].replace("build_", "") + str(i) for i, s in enumerate(SCENES)]
-    scene_par.menuLabels = labels
-    scene_par.val = scene_par.menuNames[0]
+    page = base.appendCustomPage("PhysicsVJ")
+    for parname, deflt in (("Scene", 0), ("Nextscene", 1)):
+        mp = page.appendMenu(parname)[0]
+        mp.menuNames = menu_names
+        mp.menuLabels = labels
+        mp.val = menu_names[deflt]
+    cf = page.appendFloat("Crossfade", label="Crossfade A/B")[0]
+    cf.val = 0.0
+    try:
+        base.par.Crossfade.normMin, base.par.Crossfade.normMax = 0.0, 1.0
+        base.par.Crossfade.clampMin = base.par.Crossfade.clampMax = True
+    except Exception:
+        pass
+    page.appendPulse("Cut", label="Cut To B (commit)")
     page.appendToggle("Freerunall", label="Freerun All (evolve hidden scenes)")
     _setpar(base, "Freerunall", False)
+
+    # A small DAT to commit a transition: Cut copies B->A and resets the fader.
+    cutter = _create(base, "parameterexecuteDAT", "cutter", -200, -360)
+    try:
+        _setpar(cutter, "op", base)
+        _setpar(cutter, "pars", "Cut")
+        _setpar(cutter, "valuechange", False)
+        _setpar(cutter, "onpulse", True)
+        _setpar(cutter, "active", True)
+    except Exception:
+        pass
+    cutter.text = (
+        "def onPulse(par):\n"
+        "    c = par.owner\n"
+        "    c.par.Scene = c.par.Nextscene.eval()\n"
+        "    c.par.Crossfade = 0\n"
+    )
 
     outs = []
     for i, (label, builder, kwargs) in enumerate(SCENES):
         scene = globals()[builder](dest=base, **kwargs)
         scene.nodeX, scene.nodeY = -600, 260 - i * 170
-        # Only cook this scene when it is selected (or Freerun All is on).
+        # Cook a scene only while its deck actually contributes to the mix
+        # (deck A unless fully faded to B, deck B unless fully faded to A),
+        # or when Freerun All is on. Keeps it to one live sim except mid-fade.
         _expr(
             scene, "Active",
-            f"int(parent().par.Scene.menuIndex == {i} or parent().par.Freerunall)",
+            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade < 1) "
+            f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade > 0) "
+            f"or parent().par.Freerunall)",
         )
         out = scene.op("out")
         if out is not None:
             outs.append(out)
 
-    switch = _create(base, "switchTOP", "scene_switch", 0, 0)
+    # Two selector switches (deck A and deck B) blended by a Cross TOP.
+    switch_a = _create(base, "switchTOP", "deck_a", -40, 80)
+    switch_b = _create(base, "switchTOP", "deck_b", -40, -80)
     for idx, out in enumerate(outs):
-        _connect(out, switch, idx)
-    _expr(switch, "index", "parent().par.Scene.menuIndex")
+        _connect(out, switch_a, idx)
+        _connect(out, switch_b, idx)
+    _expr(switch_a, "index", "parent().par.Scene.menuIndex")
+    _expr(switch_b, "index", "parent().par.Nextscene.menuIndex")
 
-    final = _create(base, "nullTOP", "out", 200, 0)
-    _connect(switch, final)
+    cross = _create(base, "crossTOP", "crossfade", 160, 0)
+    _connect(switch_a, cross, 0)
+    _connect(switch_b, cross, 1)
+    _expr(cross, "cross", "parent().par.Crossfade")
+
+    final = _create(base, "nullTOP", "out", 340, 0)
+    _connect(cross, final)
     try:
         final.viewer = True
     except Exception:
         pass
 
     print(f"[td_build] built PhysicsVJ with {len(outs)} scenes -> {base.path}")
-    print("[td_build] View 'out' in Perform mode. Switch with the 'Scene' parameter.")
+    print("[td_build] View 'out' in Perform mode. Cut with 'Scene'; blend with "
+          "'Nextscene' + 'Crossfade'.")
     return base
