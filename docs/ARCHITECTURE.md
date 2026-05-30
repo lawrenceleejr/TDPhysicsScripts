@@ -122,11 +122,15 @@ instant-only switcher, drop deck B + the Cross TOP and drive one Switch TOP's
 
 ## Going further
 
-* **Trails:** add a **Feedback TOP** before the bloom for motion trails — looks
-  great on N-Body and Flow.
+* **Trails:** built in (`_trails`) — a **Feedback TOP** → **Level** (decay) →
+  **Composite** (`over`) inserted between the render and the bloom, driven by a
+  per-scene `Trail` parameter (0 = passthrough). Lives on every geometry scene.
 * **Point sprites:** for very high particle counts, instance a single point with
   a Point Sprite MAT (a textured glow dot) instead of a sphere.
 * **Crossfades:** built in via the A/B decks + Cross TOP (see above). For more
   than two simultaneous layers, chain additional Cross TOPs.
-* **HUD:** the Open Data scene stores `invariant_mass` on its SOP — read it with
-  a Text TOP/CHOP for a live readout.
+* **HUD:** the Open Data scene stores `invariant_mass` on its SOP, and `_mass_hud`
+  overlays a **Script TOP** spectrum (the `mass_hud_top.py` callback histograms
+  the dataset and marks the live event) + a **Text TOP** title, faded by a
+  `HUD Opacity` level. The Script TOP array is RGBA `float32`, row 0 = bottom
+  (flip with `_FLIP_Y` in the callback if your build shows it inverted).

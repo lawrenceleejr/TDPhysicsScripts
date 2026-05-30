@@ -102,9 +102,16 @@ cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 `Palette`, `New Collision`.
 
 **Open Data** — `Seconds/Event`, `Grow Time`, `World Scale`, `Event Order`
-(by mass / random / sequential), `Palette`, `Next Event`. The current invariant
-mass is stored on the SOP (`op('.../sim').fetch('invariant_mass')`) so you can
-drive a HUD from it.
+(by mass / random / sequential), `Palette`, `Next Event`. It also gets a
+built-in **invariant-mass HUD**: a translucent log-scale histogram of the whole
+dataset (J/ψ, Υ and Z marked, left→right) with a live marker on the event being
+drawn. `HUD Opacity` fades it in/out; `Mass Min/Max` (on the HUD's own page)
+zoom the axis.
+
+**Motion trails** — every geometry scene (N-Body, Flow, Soft Body, LHC, Open
+Data) has a `Trail (feedback)` control (0–0.99): a feedback loop that leaves
+glowing tails behind moving elements. At 0 it's a clean, zero-cost passthrough;
+N-Body and the particle scenes ship with it on for an instant VJ look.
 
 **`PhysicsVJ` top level** — a DJ-style A/B crossfader:
 `Scene` (deck A / instant cut), `Nextscene` (deck B), `Crossfade` (0 = A,

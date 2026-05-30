@@ -280,6 +280,98 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200):
     return out
 
 
+def _trails(container, src, name="trail", amount=0.0, x=300, y=200):
+    """Insert a feedback motion-trail loop after ``src`` and return its output.
+
+    Builds: a Feedback TOP (previous frame) -> Level (decay) -> Composite that
+    draws the live frame *over* a fading copy of the history. A per-scene
+    ``Trail`` parameter (0..1) sets how long trails persist; at 0 the history
+    contributes nothing, so it's an exact passthrough (no extra look, no cost).
+    """
+    page = _custom_page(container, "VJ")
+    if not hasattr(container.par, "Trail"):
+        page.appendFloat("Trail", label="Trail (feedback)")
+        _setpar(container, "Trail", amount)
+        try:
+            container.par.Trail.normMin, container.par.Trail.normMax = 0.0, 0.99
+            container.par.Trail.clampMin = container.par.Trail.clampMax = True
+        except Exception:
+            pass
+
+    fb = _create(container, "feedbackTOP", name + "_fb", x, y - 150)
+    decay = _create(container, "levelTOP", name + "_decay", x + 150, y - 150)
+    _connect(fb, decay)
+    _expr(decay, "opacity", "parent().par.Trail")
+
+    comp = _create(container, "compositeTOP", name, x + 150, y)
+    _setpar(comp, "operand", "over")      # live frame over the fading history
+    _connect(src, comp, 0)
+    _connect(decay, comp, 1)
+    _setpar(fb, "top", comp)              # feed back the composite's last frame
+    return comp
+
+
+def _mass_hud(container, scene_top, x=1040, y=0):
+    """Overlay a dimuon invariant-mass spectrum HUD onto ``scene_top``.
+
+    A Script TOP draws the log-mass histogram (with J/psi, Upsilon and Z
+    markers and a live marker for the current event); a Text TOP adds the
+    title. A ``HUD Opacity`` control fades the whole overlay. Returns the
+    final 'out' null TOP (the composited result).
+    """
+    page = _custom_page(container, "VJ")
+    if not hasattr(container.par, "Hudopacity"):
+        page.appendFloat("Hudopacity", label="HUD Opacity")
+        _setpar(container, "Hudopacity", 1.0)
+        try:
+            container.par.Hudopacity.normMin, container.par.Hudopacity.normMax = 0.0, 1.0
+            container.par.Hudopacity.clampMin = container.par.Hudopacity.clampMax = True
+        except Exception:
+            pass
+
+    hud = _create(container, "scriptTOP", "mass_hud", x, y + 150)
+    _setpar(hud, "resolutionw", 1280)
+    _setpar(hud, "resolutionh", 720)
+    _install_callbacks(hud, "mass_hud_top.py")
+
+    title = _create(container, "textTOP", "mass_title", x, y + 320)
+    _setpar(title, "resolutionw", 1280)
+    _setpar(title, "resolutionh", 720)
+    _setpar(title, "text",
+            "DIMUON INVARIANT MASS  [GeV]      peaks L>R:  J/psi   Upsilon   Z")
+    _setpar(title, "fontsizex", 26)
+    _setpar(title, "fontsizey", 26)
+    _setpar(title, "alignx", "left")
+    _setpar(title, "aligny", "top")
+    _setpar(title, "fontcolorr", 0.85)
+    _setpar(title, "fontcolorg", 0.92)
+    _setpar(title, "fontcolorb", 1.0)
+    _setpar(title, "fontalpha", 0.9)
+    _setpar(title, "bgalpha", 0.0)        # transparent background
+
+    label = _create(container, "compositeTOP", "hud_label", x + 180, y + 150)
+    _setpar(label, "operand", "over")
+    _connect(title, label, 0)
+    _connect(hud, label, 1)
+
+    level = _create(container, "levelTOP", "hud_level", x + 340, y + 150)
+    _connect(label, level)
+    _expr(level, "opacity", "parent().par.Hudopacity")
+
+    over = _create(container, "compositeTOP", "hud_over", x + 520, y)
+    _setpar(over, "operand", "over")
+    _connect(level, over, 0)              # HUD on top
+    _connect(scene_top, over, 1)          # live scene behind
+
+    out = _create(container, "nullTOP", "out", x + 700, y)
+    _connect(over, out)
+    try:
+        out.viewer = True
+    except Exception:
+        pass
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Scene builders -- each returns a self-contained COMP with an 'out' TOP.
 # ---------------------------------------------------------------------------
@@ -311,7 +403,8 @@ def build_nbody(dest=None, name="nbody", palette="inferno"):
     cam = _camera(c, dist=26.0)
     light = _light(c)
     r = _render(c, geo, cam, light)
-    out = _glow(c, r, size=16.0)
+    tr = _trails(c, r, amount=0.85)
+    out = _glow(c, tr, size=16.0, x=640)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
@@ -335,7 +428,8 @@ def build_particles(dest=None, name="particles", mode="flow", palette="cyber"):
     cam = _camera(c, dist=dist)
     light = _light(c)
     r = _render(c, geo, cam, light)
-    out = _glow(c, r, size=18.0)
+    tr = _trails(c, r, amount=0.9 if mode == "flow" else 0.8)
+    out = _glow(c, tr, size=18.0, x=640)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
@@ -365,7 +459,8 @@ def build_lhc(dest=None, name="lhc"):
     _orbit(c, geo, default=9.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
     r = _render(c, geo, cam, None)
-    out = _glow(c, r, size=12.0)
+    tr = _trails(c, r, amount=0.0)
+    out = _glow(c, tr, size=12.0, x=640)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
@@ -395,7 +490,9 @@ def build_opendata(dest=None, name="opendata"):
     _orbit(c, geo, default=6.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
     r = _render(c, geo, cam, None)
-    out = _glow(c, r, size=10.0)
+    tr = _trails(c, r, amount=0.0)
+    scene = _glow(c, tr, size=10.0, name="scene", x=640)
+    out = _mass_hud(c, scene)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)

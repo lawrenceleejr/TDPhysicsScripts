@@ -46,7 +46,7 @@ def test_td_build_imports_and_exposes_builders():
     # Every callback file referenced by a builder must exist on disk.
     for name in (
         "ising_top.py", "nbody_chop.py", "particles_chop.py",
-        "lhc_sop.py", "opendata_sop.py",
+        "lhc_sop.py", "opendata_sop.py", "mass_hud_top.py",
     ):
         assert os.path.isfile(os.path.join(td_build._CALLBACK_DIR, name)), name
 
