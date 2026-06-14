@@ -5,7 +5,7 @@
 
 out vec4 fragColor;
 
-uniform vec2  uRes;
+#define uRes (uTDOutputInfo.res.zw)  // TD built-in output res (no uniform binding needed)
 uniform float uTime;
 uniform float uBass;
 uniform float uMid;
