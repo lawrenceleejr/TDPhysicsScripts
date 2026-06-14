@@ -43,9 +43,9 @@ except Exception:
 
 # Scene COMP names in build_all() order, and each scene's "re-fire" pulse.
 SCENE_NAMES = ["ising", "nbody", "flow", "softbody", "lhc", "opendata",
-               "rd", "sdf", "pops"]
+               "rd", "sdf", "pops", "hydrogen"]
 REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent",
-                "Reseed", "Reseed", "Reset"]
+                "Reseed", "Reseed", "Reset", "Reset"]
 N_SCENES = len(SCENE_NAMES)
 N_PAL = len(_PALETTES)
 N_GRID_COLS = 8  # the APC grid is 8 wide; scene 8 lives on a scene button

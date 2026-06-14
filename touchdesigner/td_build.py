@@ -46,6 +46,7 @@ SCENES = [
     ("React-Diff", "build_reaction_diffusion", {"name": "rd"}),
     ("Raymarch SDF", "build_raymarch", {"name": "sdf"}),
     ("POP Storm", "build_pops", {"name": "pops"}),
+    ("Bohmian H", "build_bohmian", {"name": "hydrogen"}),
 ]
 
 
@@ -1259,4 +1260,78 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         _cook_driver(c, geo.op("sim"))
     print(f"[td_build] built POP particle storm -> {c.path} "
           f"({'POPs' if built_pops else 'flow fallback'})")
+    return c
+
+
+def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
+    """Bohmian (pilot-wave) electrons in hydrogen orbitals.
+
+    A cloud of electrons sampled from |psi|^2 is advected by the de Broglie-Bohm
+    guidance velocity (physics/hydrogen.py, unit-tested). For m != 0 orbitals
+    they circulate about the z-axis (glowing rings under the trail feedback);
+    for real / m = 0 orbitals they sit nearly still; superpositions slosh. Pick
+    the state on the sim's 'Orbital' menu.
+
+    Rendered with the compiled glow material + a 3-point light rig. Instancing
+    is the reliable render path; a 'points' POP is also wired from the sim so
+    you can render via the POP family on TD 2025+ (flip the POP's Render flag
+    and the geo's Instancing off) once verified on your build.
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    reactor = dest.op("Reactor")
+
+    sim = _create(c, "scriptCHOP", "sim", -500, 0)
+    _install_callbacks(sim, "hydrogen_chop.py")
+    _setpar(sim, "Palette", palette)
+    _setpar(sim, "Count", count)
+
+    geo = _create(c, "geometryCOMP", "geo", -260, 0)
+    for child in list(geo.children):
+        try:
+            child.destroy()
+        except Exception:
+            pass
+    sph = geo.create("sphereSOP", "shape")
+    _setpar(sph, "type", "poly"); _setpar(sph, "rows", 4); _setpar(sph, "cols", 6)
+    try:
+        sph.render = sph.display = True
+    except Exception:
+        pass
+    _setpar(geo, "instancing", True)
+    _setpar(geo, "instanceop", sim)
+    for p, ch in (("instancetx", "c0"), ("instancety", "c1"), ("instancetz", "c2"),
+                  ("instancesx", "c6"), ("instancesy", "c6"), ("instancesz", "c6"),
+                  ("instancer", "c3"), ("instanceg", "c4"), ("instanceb", "c5")):
+        _setpar(geo, p, ch)
+    _setpar(geo, "instancecolormode", "mult")
+
+    # Best-effort POP point cloud from the same channels (render flag left off
+    # so it never competes with the instancing path; see docstring).
+    pop = _try_create(geo, "choptopPOP", "points", -460, -150)
+    if pop is not None:
+        try:
+            _setpar(pop, "chop", sim)
+            pop.render = pop.display = False
+        except Exception:
+            pass
+
+    mat = _glow_mat(c, reactor)
+    _setpar(geo, "material", mat)
+    lights = _light_rig(c, reactor)
+    _orbit(c, geo, default=8.0)            # slow camera spin to read the 3D shape
+    cam = _camera(c, dist=18.0, tilt=-10.0)
+    r = _render(c, geo, cam, lights[0])
+    try:
+        r.par.lights = " ".join(l.name for l in lights)
+    except Exception:
+        pass
+    tr = _trails(c, r, amount=0.9)          # trails turn circulation into rings
+    out = _glow(c, tr, size=16.0, x=640)
+    _cook_driver(c, sim)
+    try:
+        sim.cook(force=True)
+    except Exception:
+        pass
+    print(f"[td_build] built Bohmian hydrogen -> {c.path}")
     return c

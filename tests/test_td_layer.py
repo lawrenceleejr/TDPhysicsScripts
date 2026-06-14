@@ -68,10 +68,10 @@ def test_shader_files_present_and_nonempty():
 def test_new_builders_exposed():
     td_build = importlib.import_module("touchdesigner.td_build")
     for fn in ("build_reactor", "build_tempo", "build_reaction_diffusion",
-               "build_raymarch", "build_pops"):
+               "build_raymarch", "build_pops", "build_bohmian"):
         assert callable(getattr(td_build, fn)), fn
-    # The audio/tempo callbacks must exist on disk.
-    for name in ("audio_chop.py", "tempo_chop.py"):
+    # The audio/tempo/hydrogen callbacks must exist on disk.
+    for name in ("audio_chop.py", "tempo_chop.py", "hydrogen_chop.py"):
         assert os.path.isfile(os.path.join(td_build._CALLBACK_DIR, name)), name
 
 

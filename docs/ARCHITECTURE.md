@@ -175,6 +175,19 @@ hot-swappable assets + a thin, defensive TD adapter.
   `particlePOP` with `forceradialPOP`/`noisePOP` in a feedback loop) and falls
   back to the proven curl-noise Flow callback if the family isn't available.
   Both paths share the compiled glow MAT + 3-point light rig.
+* **Bohmian hydrogen (`physics/hydrogen.py` → `callbacks/hydrogen_chop.py` →
+  `build_bohmian`).** Hydrogen eigenstates `psi_{nlm}=R_{nl}Y_l^m` (generalised
+  Laguerre + associated Legendre recurrences, atomic units), time-dependent
+  superpositions, and the de Broglie-Bohm guidance velocity
+  `v = Im(grad psi / psi)` (complex finite-difference gradient). The Script CHOP
+  seeds electrons by rejection-sampling `|psi|^2`, integrates them along `v`
+  (small fixed step, a few substeps), recycles a fraction each frame to stay
+  crisp, and colours by speed. Verified in `tests/test_hydrogen.py`: 1s is
+  static, `psi_{2,1,+1}` circulates in +phi (and −m reverses), superpositions
+  are time-dependent, and the sampler reproduces `<r>_{1s}=1.5 a0`. Rendered via
+  instancing (reliable) with a `choptopPOP` wired but render-off so you can move
+  to a POP render path once verified on your build. The velocity scale is
+  deliberately exaggerated (a `Speed` param) — true atomic velocities are tiny.
 
 ### Version-sensitive spots (verify on first load)
 

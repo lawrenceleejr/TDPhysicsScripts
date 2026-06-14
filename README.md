@@ -4,7 +4,7 @@ A library of **live physics simulations for [TouchDesigner](https://derivative.c
 built for VJ / DJ sets. Everything is dark-background, neon, glowing, and
 designed so you can **pre-build every scene and flip between them instantly**.
 
-Nine scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU:
+Ten scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU:
 
 | # | Scene | What it is |
 |---|-------|-----------|
@@ -17,8 +17,9 @@ Nine scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU:
 | 6 | **React-Diff** | GPU **Gray-Scott reaction-diffusion** (feedback GLSL TOP) — organic spots/stripes/mitosis that bloom and dissolve with the music. |
 | 7 | **Raymarch SDF** | A compiled-shader **raymarched signed-distance field** — morphing metaballs that twist to the bass and orbit on the bar. |
 | 8 | **POP Storm** | A **GPU particle storm** built with TouchDesigner's POP family (falls back to high-count curl-noise on older builds): huge numbers of particles driven by radial + turbulent forces, rim-lit by a compiled glow material. |
+| 9 | **Bohmian H** | **Pilot-wave (de Broglie–Bohm) electrons in hydrogen orbitals.** A cloud sampled from \|ψ\|² flows along the guidance velocity **v = Im(∇ψ/ψ)** — electrons in m≠0 orbitals circulate the z-axis into glowing rings, real/m=0 orbitals sit nearly still, and superpositions slosh. Pick the orbital/superposition on the sim. |
 
-Scenes 6–8 are GPU/shader-based; the whole show is **audio-reactive and
+Scenes 6–9 are GPU/shader-based; the whole show is **audio-reactive and
 tempo-synced** (see below).
 
 ---
@@ -204,7 +205,7 @@ parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`
 | **Track button 8** | **Freerun All** toggle (lit while on). |
 | **Scene button 1** (top-right) | **Reset** the controller — re-handshake and repaint every LED. |
 | **Scene button 2** | **Re-fire** the live scene (new collision / next event / reseed). |
-| **Scene button 3** | Launch **POP Storm** (scene 8, which lives past the 8-wide grid). |
+| **Scene buttons 3–4** | Launch scenes past the 8-wide grid (**POP Storm** = 8, **Bohmian H** = 9). |
 | **Master fader (9)** | **Crossfade** A/B. |
 | **Faders 1 / 2 / 3** | Live scene **Trail / Orbit / Point Size**. Faders 4–8 are free. |
 
@@ -256,6 +257,7 @@ physics/            numpy simulation + DSP cores (no TouchDesigner dependency)
   particles.py      curl-noise flow + shape-matched soft body + Perlin noise
   lhc_tracks.py     helical charged-track generator
   opendata.py       CMS dimuon loader + synthetic generator + event show
+  hydrogen.py       hydrogen orbitals + de Broglie-Bohm guidance dynamics
   audio.py          audio analyser + beat tracker + MIDI-clock tempo follower
   palette.py        neon colormaps (glow-on-black)
 touchdesigner/
