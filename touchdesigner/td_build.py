@@ -882,21 +882,25 @@ def build_reactor(dest=None, name="Reactor"):
     """
     dest = dest or op("/")  # noqa: F821
     c = _create(dest, "baseCOMP", name)
-    src = _create(c, "audiodeviceinCHOP", "source", -400, 0)
+    src = _try_create(c, "audiodeviceinCHOP", "source", -400, 0)
 
     analyze = _create(c, "scriptCHOP", "analyze", -180, 0)
     _install_callbacks(analyze, "audio_chop.py")
-    _connect(src, analyze)
+    if src is not None:
+        _connect(src, analyze)
     _cook_driver(c, analyze)  # advance the envelope follower once per frame
 
     # Waveform texture (R = samples across width).
-    wave_tex = _create(c, "choptopTOP", "wave_tex", -180, -160)
-    _setpar(wave_tex, "chop", src)
+    wave_tex = _try_create(c, "choptoTOP", "wave_tex", -180, -160)
+    if wave_tex is not None and src is not None:
+        _setpar(wave_tex, "chop", src)
     # Spectrum texture (R = FFT magnitude across width).
-    spec = _create(c, "audiospectrumCHOP", "spec", -400, -160)
-    _connect(src, spec)
-    spec_tex = _create(c, "choptopTOP", "spec_tex", -180, -260)
-    _setpar(spec_tex, "chop", spec)
+    spec = _try_create(c, "audiospectrumCHOP", "spec", -400, -160)
+    if spec is not None and src is not None:
+        _connect(src, spec)
+    spec_tex = _try_create(c, "choptoTOP", "spec_tex", -180, -260)
+    if spec_tex is not None and spec is not None:
+        _setpar(spec_tex, "chop", spec)
 
     print(f"[td_build] built Reactor -> {c.path} "
           "(set the 'source' node's Device to your DJ input)")
@@ -1137,9 +1141,14 @@ def _light_rig(container, reactor=None, x=-200, y=300):
 
 def _glow_mat(container, reactor=None, name="glow_mat", x=-200, y=-180):
     """Compiled GLSL MAT: emissive core + Fresnel rim, audio-reactive. Looks
-    expensive, costs little, and blooms through the scene glow pass."""
+    expensive, costs little, and blooms through the scene glow pass. Falls back
+    to a Constant MAT (showing the instance colours) if glslMAT is unavailable."""
     rex = _react_exprs(reactor)
-    mat = _create(container, "glslMAT", name, x, y)
+    mat = _try_create(container, "glslMAT", name, x, y)
+    if mat is None:
+        mat = _create(container, "constantMAT", name, x, y)
+        _setpar(mat, "applypointcolor", True)
+        return mat
     _setpar(mat, "vertexdat", _shader_dat(container, name + "_vert", "glow_mat.vert", x, y - 130, prepend_common=False))
     _setpar(mat, "pixeldat", _shader_dat(container, name + "_pix", "glow_mat.pixel", x + 150, y - 130, prepend_common=False))
     _glsl_uniforms(mat, [("uLevel", rex["level"]), ("uBeat", rex["beat"])])
