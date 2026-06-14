@@ -36,5 +36,11 @@ if not REPO:
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
+# Drop cached copies so on-disk edits take effect without restarting TD.
+for _m in list(sys.modules):
+    if (_m == "touchdesigner" or _m.startswith("touchdesigner.")
+            or _m == "physics" or _m.startswith("physics.")):
+        del sys.modules[_m]
+
 from touchdesigner import td_build
 td_build.build_all(op('/'))
