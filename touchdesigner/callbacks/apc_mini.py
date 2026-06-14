@@ -42,10 +42,13 @@ except Exception:
     _PALETTES = ["inferno", "magma", "plasma", "cyber", "synth", "acid", "ice"]
 
 # Scene COMP names in build_all() order, and each scene's "re-fire" pulse.
-SCENE_NAMES = ["ising", "nbody", "flow", "softbody", "lhc", "opendata"]
-REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent"]
+SCENE_NAMES = ["ising", "nbody", "flow", "softbody", "lhc", "opendata",
+               "rd", "sdf", "pops"]
+REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent",
+                "Reseed", "Reseed", "Reset"]
 N_SCENES = len(SCENE_NAMES)
 N_PAL = len(_PALETTES)
+N_GRID_COLS = 8  # the APC grid is 8 wide; scene 8 lives on a scene button
 
 # --- APC mini mk2 hardware map -------------------------------------------
 TRACK_BTN = [100, 101, 102, 103, 104, 105, 106, 107]  # bottom round buttons
@@ -163,9 +166,18 @@ def _live_index(t):
     return _menu_index(t, "Scene", 0)
 
 
-def _scene_palette(t, idx):
+def _palette_holder(t, idx):
+    """The op carrying a scene's Palette menu: the 'sim' (numpy scenes) or the
+    scene COMP itself (GLSL scenes like rd/sdf)."""
     sim = _scene_sim(t, idx)
-    return _menu_index(sim, "Palette", -1) if sim is not None else -1
+    if sim is not None and hasattr(sim.par, "Palette"):
+        return sim
+    return _scene_comp(t, idx)
+
+
+def _scene_palette(t, idx):
+    holder = _palette_holder(t, idx)
+    return _menu_index(holder, "Palette", -1) if holder is not None else -1
 
 
 # ---------------------------------------------------------------------------
@@ -219,13 +231,15 @@ def repaint(apc):
     cf = _getf(t, "Crossfade", 0.0)
     freerun = _geti(t, "Freerunall", 0)
 
-    # Grid: scenes (cols) x palettes (rows).
+    # Grid: scenes (cols) x palettes (rows). The grid is 8 wide; scene 8+ live
+    # on scene buttons (see below).
+    grid_scenes = min(N_SCENES, N_GRID_COLS)
     for col in range(8):
         is_live = (col == live)
-        cur_pal = _scene_palette(t, col) if col < N_SCENES else -1
+        cur_pal = _scene_palette(t, col) if col < grid_scenes else -1
         for row in range(8):
             note = _grid_note(col, row)
-            if col < N_SCENES and row < N_PAL:
+            if col < grid_scenes and row < N_PAL:
                 vel = PAL_COLOR.get(_PALETTES[row], DEFAULT_COLOR)
                 if is_live and row == cur_pal:
                     _pad(apc, note, vel, CH_PULSE)
@@ -247,6 +261,10 @@ def repaint(apc):
         _round(apc, n, ROUND_OFF)
     _round(apc, BTN_RESET, ROUND_ON)
     _round(apc, BTN_REFIRE, ROUND_ON)
+    # Any scenes past the 8-wide grid get a dedicated launch button.
+    for extra in range(N_GRID_COLS, N_SCENES):
+        btn = SCENE_BTN[2 + (extra - N_GRID_COLS)]
+        _round(apc, btn, ROUND_BLINK if live == extra else ROUND_ON)
 
 
 def reset(apc):
@@ -277,18 +295,19 @@ def on_midi(apc, message, channel, index, value):
 def _on_note(apc, t, note):
     if t is None:
         return
+    grid_scenes = min(N_SCENES, N_GRID_COLS)
     if 0 <= note <= 63:
         col, row = note % 8, note // 8
-        if col < N_SCENES and row < N_PAL:
+        if col < grid_scenes and row < N_PAL:
             _set_menu(t, "Scene", col)              # instant cut to deck A
-            sim = _scene_sim(t, col)
-            if sim is not None:
-                _set_menu(sim, "Palette", row)      # and pick the palette
+            holder = _palette_holder(t, col)
+            if holder is not None:
+                _set_menu(holder, "Palette", row)   # and pick the palette
         repaint(apc)
         return
     if note in TRACK_BTN:
         i = TRACK_BTN.index(note)
-        if i < N_SCENES:
+        if i < grid_scenes:
             _set_menu(t, "Nextscene", i)            # arm deck B
         elif note == BTN_CUT:
             _pulse(t, "Cut")                        # commit the crossfade
@@ -302,6 +321,12 @@ def _on_note(apc, t, note):
             return
         if note == BTN_REFIRE:
             _refire(t)
+        else:
+            # Launch buttons for any scenes past the 8-wide grid.
+            i = SCENE_BTN.index(note)
+            extra = N_GRID_COLS + (i - 2)
+            if 2 <= i and N_GRID_COLS <= extra < N_SCENES:
+                _set_menu(t, "Scene", extra)
         repaint(apc)
 
 
@@ -326,11 +351,17 @@ def _on_fader(apc, t, cc, value):
 
 
 def _refire(t):
-    """Re-trigger the live scene's signature event (re-collide / next event)."""
+    """Re-trigger the live scene's signature event (re-collide / next event /
+    reseed). The pulse lives on the 'sim' (numpy scenes) or the COMP (GLSL)."""
     idx = _live_index(t)
+    if not (0 <= idx < N_SCENES):
+        return
+    name = REFIRE_PULSE[idx]
     sim = _scene_sim(t, idx)
-    if sim is not None and 0 <= idx < N_SCENES:
-        _pulse(sim, REFIRE_PULSE[idx])
+    if sim is not None and hasattr(sim.par, name):
+        _pulse(sim, name)
+    else:
+        _pulse(_scene_comp(t, idx), name)
 
 
 # ---------------------------------------------------------------------------

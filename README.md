@@ -4,7 +4,7 @@ A library of **live physics simulations for [TouchDesigner](https://derivative.c
 built for VJ / DJ sets. Everything is dark-background, neon, glowing, and
 designed so you can **pre-build every scene and flip between them instantly**.
 
-Six scenes, spanning physics:
+Nine scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU:
 
 | # | Scene | What it is |
 |---|-------|-----------|
@@ -14,6 +14,12 @@ Six scenes, spanning physics:
 | 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly. |
 | 4 | **LHC Tracks** | Synthetic collider events: charged tracks spiralling in a magnetic field, colour-coded by momentum, re-firing every few seconds. |
 | 5 | **Open Data** | **Real CMS dimuon open data** — each event drawn as two muon tracks, coloured by invariant mass (you're literally rendering the J/ψ, Υ and Z). |
+| 6 | **React-Diff** | GPU **Gray-Scott reaction-diffusion** (feedback GLSL TOP) — organic spots/stripes/mitosis that bloom and dissolve with the music. |
+| 7 | **Raymarch SDF** | A compiled-shader **raymarched signed-distance field** — morphing metaballs that twist to the bass and orbit on the bar. |
+| 8 | **POP Storm** | A **GPU particle storm** built with TouchDesigner's POP family (falls back to high-count curl-noise on older builds): huge numbers of particles driven by radial + turbulent forces, rim-lit by a compiled glow material. |
+
+Scenes 6–8 are GPU/shader-based; the whole show is **audio-reactive and
+tempo-synced** (see below).
 
 ---
 
@@ -125,6 +131,56 @@ tuned to glow on black.
 
 ---
 
+## Audio-reactive & tempo-synced
+
+`build_all` drops two engine components beside the scenes:
+
+**`Reactor`** — the DJ feed. An **Audio Device In CHOP** (pick your interface
+on its `source` node) → a numpy analyser that emits smoothed, normalised
+control channels: `bass`, `mid`, `high`, `level`, `beat` (adaptive onset
+detector), `bpm`. It also builds **waveform** and **spectrum** row textures for
+the visualiser. The DSP core lives in `physics/audio.py` (pure numpy,
+unit-tested).
+
+**`Tempo`** — a tempo engine that **follows an incoming MIDI beat clock**
+(24 PPQN) via a MIDI In DAT, or **free-runs on a manual BPM** when no clock is
+present. Outputs `bpm`, `beat`/`bar` phase ramps, a beat-locked `sine` LFO and
+a `pulse` trigger. Set the MIDI device id on the `Tempo/clockin` node (match
+TD's MIDI Device Mapper). Manual BPM always works, so visuals lock even with no
+clock plugged in.
+
+Both feed the show automatically: a tasteful set of scene parameters (Ising
+temperature, N-Body gravity, Flow speed/evolve, soft-body spin) are bound to
+the audio so the visuals **evolve on their own**, and every GLSL scene + the
+post chain take audio/tempo uniforms. (The bindings deliberately avoid the
+parameters the APC faders own, so you keep manual control of those.)
+
+**Creative waveform visualiser** — toggle **`Wavevis`** on `PhysicsVJ` to
+composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
+
+## GPU, shaders & POPs
+
+- **Compiled GLSL everywhere it counts.** Reaction-diffusion, the raymarched
+  SDF, the waveform overlay and the master **post-FX** chain (beat punch,
+  chromatic aberration, optional kaleidoscope, scanline shimmer, vignette) are
+  all GLSL TOPs. Shader source lives in `touchdesigner/shaders/` — readable,
+  hot-swappable `.frag`/`.vert` files, not buried in nodes.
+- **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`.
+- **POP Storm.** Scene 8 uses TouchDesigner's **POP** family (GPU-resident 3D
+  operators) for very large, organic, force-driven particle counts, rim-lit by
+  a compiled glow material (`glow_mat.vert`/`.pixel`) under a 3-point light rig.
+  POPs need **TouchDesigner 2023.30000+** (officially 2024+); on older builds
+  the scene automatically falls back to a high-count curl-noise particle system
+  so it always renders.
+
+> Heads-up: the shader/POP layer is built to standard TD conventions but hasn't
+> been run on hardware here — see the note at the end of this section in
+> `docs/ARCHITECTURE.md` for the handful of version-sensitive spots to glance at
+> on first load (GLSL-TOP uniform slots, POP operator/parameter names, MIDI
+> realtime-clock delivery).
+
+---
+
 ## Run the whole show from an APC mini mk2
 
 `build_all` also drops an **`APCShow`** component that turns an
@@ -142,12 +198,13 @@ parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`
 
 | Control | Does |
 |---------|------|
-| **8×8 grid** | Columns 0–5 = the six scenes, rows 0–6 = the seven palettes. Press a pad to **instant-cut** to that scene *and* set its palette. Pads glow in each palette's signature colour; the live scene's column is bright and its active-palette pad **pulses**. |
-| **Track buttons 1–6** (below grid) | Arm scene 0–5 onto **deck B** (`Nextscene`) — the armed one blinks. |
+| **8×8 grid** | Columns 0–7 = the first eight scenes, rows 0–6 = the seven palettes. Press a pad to **instant-cut** to that scene *and* set its palette. Pads glow in each palette's signature colour; the live scene's column is bright and its active-palette pad **pulses**. |
+| **Track buttons 1–6** (below grid) | Arm a scene onto **deck B** (`Nextscene`) — the armed one blinks. |
 | **Track button 7** | **Cut** — commit the crossfade B→A (lit while a fade is in progress). |
 | **Track button 8** | **Freerun All** toggle (lit while on). |
 | **Scene button 1** (top-right) | **Reset** the controller — re-handshake and repaint every LED. |
-| **Scene button 2** | **Re-fire** the live scene (new collision / next event / reset). |
+| **Scene button 2** | **Re-fire** the live scene (new collision / next event / reseed). |
+| **Scene button 3** | Launch **POP Storm** (scene 8, which lives past the 8-wide grid). |
 | **Master fader (9)** | **Crossfade** A/B. |
 | **Faders 1 / 2 / 3** | Live scene **Trail / Orbit / Point Size**. Faders 4–8 are free. |
 
@@ -193,16 +250,18 @@ pytest -q
 ## Project layout
 
 ```
-physics/            numpy simulation cores (no TouchDesigner dependency)
+physics/            numpy simulation + DSP cores (no TouchDesigner dependency)
   ising.py          2D Ising model (vectorised checkerboard Metropolis)
   nbody.py          softened leapfrog N-body + galaxy/disk/cluster setups
   particles.py      curl-noise flow + shape-matched soft body + Perlin noise
   lhc_tracks.py     helical charged-track generator
   opendata.py       CMS dimuon loader + synthetic generator + event show
+  audio.py          audio analyser + beat tracker + MIDI-clock tempo follower
   palette.py        neon colormaps (glow-on-black)
 touchdesigner/
   td_build.py       run inside TD to assemble scenes
   callbacks/        Script TOP/CHOP/SOP callback sources (embedded by td_build)
+  shaders/          GLSL shader source (.frag/.vert) for the GPU scenes + FX
   builders/         one-click launcher scripts (load into a Text DAT, Run)
 data/
   dimuon_sample.csv bundled synthetic dimuon data (offline fallback)

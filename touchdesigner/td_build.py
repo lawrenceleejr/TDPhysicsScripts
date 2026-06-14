@@ -43,6 +43,9 @@ SCENES = [
     ("Soft Body", "build_particles", {"mode": "softbody", "name": "softbody", "palette": "synth"}),
     ("LHC Tracks", "build_lhc", {}),
     ("Open Data", "build_opendata", {}),
+    ("React-Diff", "build_reaction_diffusion", {"name": "rd"}),
+    ("Raymarch SDF", "build_raymarch", {"name": "sdf"}),
+    ("POP Storm", "build_pops", {"name": "pops"}),
 ]
 
 
@@ -663,6 +666,25 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     page.appendToggle("Freerunall", label="Freerun All (evolve hidden scenes)")
     _setpar(base, "Freerunall", False)
 
+    # Audio + tempo engines, built first so scenes/shaders can bind to them.
+    reactor = build_reactor(dest=base)
+    reactor.nodeX, reactor.nodeY = -600, 460
+    tempo = build_tempo(dest=base)
+    tempo.nodeX, tempo.nodeY = -600, 360
+
+    # Master FX controls (drive the GLSL post chain).
+    fxpage = base.appendCustomPage("Look")
+    fxpage.appendFloat("Kaleido", label="Kaleidoscope")[0].val = 0.0
+    fxpage.appendFloat("Rgbshift", label="RGB Shift (px)")[0].val = 1.5
+    fxpage.appendFloat("Punch", label="Beat Punch")[0].val = 1.0
+    fxpage.appendToggle("Wavevis", label="Waveform Overlay")[0].val = False
+    for pn, mx in (("Kaleido", 1.0), ("Rgbshift", 8.0), ("Punch", 2.0)):
+        try:
+            getattr(base.par, pn).normMin = 0.0
+            getattr(base.par, pn).normMax = mx
+        except Exception:
+            pass
+
     # A small DAT to commit a transition: Cut copies B->A and resets the fader.
     cutter = _create(base, "parameterexecuteDAT", "cutter", -200, -360)
     try:
@@ -711,12 +733,19 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _connect(switch_b, cross, 1)
     _expr(cross, "cross", "parent().par.Crossfade")
 
-    final = _create(base, "nullTOP", "out", 340, 0)
-    _connect(cross, final)
+    # Creative waveform overlay (toggled by 'Wavevis'), then the GLSL post chain.
+    mixed = _waveform_overlay(base, cross, reactor, x=300)
+    post = _post_fx(base, mixed, reactor, tempo, x=480)
+
+    final = _create(base, "nullTOP", "out", 700, 0)
+    _connect(post, final)
     try:
         final.viewer = True
     except Exception:
         pass
+
+    # Make the whole show breathe: bind scene params to the audio + tempo.
+    _reactive_bindings(base, reactor, tempo)
 
     print(f"[td_build] built PhysicsVJ with {len(outs)} scenes -> {base.path}")
     print("[td_build] View 'out' in Perform mode. Cut with 'Scene'; blend with "
@@ -730,3 +759,504 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             print(f"[td_build] APC surface skipped: {e}")
 
     return base
+
+
+# ===========================================================================
+# GLSL / audio / tempo layer
+#
+# Everything below adds compiled-shader scenes, a GLSL post chain, an audio
+# Reactor (the DJ feed -> bass/mid/high/level/beat) and a Tempo engine that
+# follows a MIDI beat clock (or free-runs). Scenes and shaders bind their
+# uniforms/params to these so the whole show reacts and evolves with the music.
+# ===========================================================================
+_SHADER_DIR = os.path.join(REPO, "touchdesigner", "shaders")
+
+
+def _try_create(parent, optype, name, x=0, y=0):
+    """Like _create but returns None instead of raising on unknown op types
+    (used for bleeding-edge families like POPs that may not exist on a build)."""
+    try:
+        return _create(parent, optype, name, x, y)
+    except Exception as e:
+        print(f"[td_build] cannot create {optype} '{name}': {e}")
+        return None
+
+
+def _load_shader(filename, prepend_common=True):
+    with open(os.path.join(_SHADER_DIR, filename)) as fh:
+        text = fh.read()
+    if prepend_common and filename != "common.glsl":
+        with open(os.path.join(_SHADER_DIR, "common.glsl")) as fh:
+            text = fh.read() + "\n" + text
+    return text
+
+
+def _shader_dat(container, name, filename, x, y, prepend_common=True):
+    dat = _create(container, "textDAT", name, x, y)
+    dat.text = _load_shader(filename, prepend_common)
+    return dat
+
+
+def _bindexpr(o, name, expression):
+    try:
+        p = getattr(o.par, name)
+        p.expr = expression
+        p.mode = ParMode.EXPRESSION  # noqa: F821 (TD global)
+        return True
+    except Exception:
+        return False
+
+
+def _glsl_uniforms(top, scalars, start=0):
+    """Fill a GLSL TOP's 'Vectors' slots with float uniforms.
+
+    ``scalars`` is an ordered list of ``(uniformName, exprStr_or_number)``.
+    Each occupies one slot (uninameN + valueNx). Returns the next free slot.
+    Defensive: if the parameter names differ on this TD version, the shader
+    still runs -- you just bind these uniforms by hand on the node.
+    """
+    slot = start
+    for uname, val in scalars:
+        _setpar(top, f"uniname{slot}", uname)
+        px = f"value{slot}x"
+        if isinstance(val, str):
+            _bindexpr(top, px, val)
+        else:
+            _setpar(top, px, val)
+        slot += 1
+    return slot
+
+
+def _glsl_vec2(top, slot, uname, ex, ey):
+    _setpar(top, f"uniname{slot}", uname)
+    for comp, e in (("x", ex), ("y", ey)):
+        pn = f"value{slot}{comp}"
+        if isinstance(e, str):
+            _bindexpr(top, pn, e)
+        else:
+            _setpar(top, pn, e)
+    return slot + 1
+
+
+def _react_exprs(reactor):
+    """Expression strings reading the Reactor's analyze CHOP (or constants)."""
+    keys = ("bass", "mid", "high", "level", "beat", "bpm")
+    if reactor is None or reactor.op("analyze") is None:
+        return {k: 0.0 for k in keys}
+    base = reactor.op("analyze").path
+    return {k: f"op('{base}')['{k}']" for k in keys}
+
+
+def _tempo_exprs(tempo):
+    keys = ("bpm", "beat", "bar", "sine", "pulse")
+    if tempo is None or tempo.op("tempo") is None:
+        return {k: 0.0 for k in keys}
+    base = tempo.op("tempo").path
+    return {k: f"op('{base}')['{k}']" for k in keys}
+
+
+def _glsl_scene_palette(container, default_index=0):
+    """A 'Palette' menu on a GLSL scene COMP (so the APC + UI can drive it)."""
+    page = _custom_page(container, "VJ")
+    if not hasattr(container.par, "Palette"):
+        m = page.appendMenu("Palette")[0]
+        try:
+            from physics import palette
+            m.menuNames = palette.PALETTE_NAMES
+            m.menuLabels = palette.PALETTE_NAMES
+            m.val = palette.PALETTE_NAMES[default_index % len(palette.PALETTE_NAMES)]
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Audio Reactor + Tempo engine
+# ---------------------------------------------------------------------------
+def build_reactor(dest=None, name="Reactor"):
+    """The DJ feed -> reactive control channels + data textures.
+
+    Builds an Audio Device In CHOP (pick your interface on its 'source' node),
+    a Script CHOP analyser (bass/mid/high/level/beat/bpm) and two row textures
+    (waveform + spectrum) used by the waveform overlay shader.
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    src = _create(c, "audiodeviceinCHOP", "source", -400, 0)
+
+    analyze = _create(c, "scriptCHOP", "analyze", -180, 0)
+    _install_callbacks(analyze, "audio_chop.py")
+    _connect(src, analyze)
+    _cook_driver(c, analyze)  # advance the envelope follower once per frame
+
+    # Waveform texture (R = samples across width).
+    wave_tex = _create(c, "choptopTOP", "wave_tex", -180, -160)
+    _setpar(wave_tex, "chop", src)
+    # Spectrum texture (R = FFT magnitude across width).
+    spec = _create(c, "audiospectrumCHOP", "spec", -400, -160)
+    _connect(src, spec)
+    spec_tex = _create(c, "choptopTOP", "spec_tex", -180, -260)
+    _setpar(spec_tex, "chop", spec)
+
+    print(f"[td_build] built Reactor -> {c.path} "
+          "(set the 'source' node's Device to your DJ input)")
+    return c
+
+
+def build_tempo(dest=None, name="Tempo", device=1):
+    """A tempo engine: follows an incoming MIDI beat clock (24 PPQN) on the
+    given device id, or free-runs on a manual BPM. Outputs beat/bar phase."""
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+
+    clockin = _create(c, "midiinDAT", "clockin", -360, 0)
+    for pn in ("id", "device"):
+        _setpar(clockin, pn, device)
+    # Make sure realtime/system messages (clock/start/stop) are delivered.
+    for pn in ("realtime", "system", "clock", "active"):
+        _setpar(clockin, pn, True)
+    cb = _create(c, "textDAT", "clockin_callbacks", -360, 150)
+    cb.text = (
+        "import sys\n"
+        f"sys.path.insert(0, r\"{REPO}\")\n"
+        "from touchdesigner.callbacks import tempo_chop\n\n"
+        "def onReceiveMIDI(dat, rowIndex, message, channel, index, value, input, bytes):\n"
+        "    try:\n"
+        "        tempo_chop.on_realtime(dat.parent().op('tempo'), message)\n"
+        "    except Exception as e:\n"
+        "        debug('[tempo] midi', e)\n"
+        "    return\n"
+    )
+    _setpar(clockin, "callbacks", cb)
+
+    tempo = _create(c, "scriptCHOP", "tempo", -120, 0)
+    _install_callbacks(tempo, "tempo_chop.py")
+    _cook_driver(c, tempo)
+
+    print(f"[td_build] built Tempo -> {c.path} (MIDI clock device {device}; "
+          "manual BPM always works as a fallback)")
+    return c
+
+
+# ---------------------------------------------------------------------------
+# GLSL TOP scenes
+# ---------------------------------------------------------------------------
+def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
+    """Gray-Scott reaction-diffusion on the GPU -- organic, ever-evolving
+    spots/stripes that bloom and dissolve with the music (feedback GLSL TOP)."""
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    reactor, tempo = dest.op("Reactor"), dest.op("Tempo")
+    rex = _react_exprs(reactor)
+    _glsl_scene_palette(c, palette_index)
+    page = _custom_page(c, "VJ")
+    if not hasattr(c.par, "Feed"):
+        page.appendFloat("Feed", label="Feed Rate")[0].val = 0.037
+        page.appendFloat("Kill", label="Kill Rate")[0].val = 0.06
+        page.appendPulse("Reseed", label="Reseed")
+    res = 320
+
+    state = _create(c, "glslTOP", "rd_state", -200, 0)
+    _setpar(state, "resolutionw", res)
+    _setpar(state, "resolutionh", res)
+    _setpar(state, "format", "rgba32float")
+    _setpar(state, "pixeldat", _shader_dat(c, "rd_state_src", "reaction_diffusion.frag", -200, 150))
+
+    fb = _create(c, "feedbackTOP", "rd_fb", -400, 0)
+    _setpar(fb, "top", state)
+    _connect(fb, state, 0)
+
+    # Reseed: store the trigger frame; the shader's uReseed reads it for 1 frame.
+    reseeder = _create(c, "parameterexecuteDAT", "reseeder", -400, 150)
+    _setpar(reseeder, "op", c)
+    _setpar(reseeder, "pars", "Reseed")
+    _setpar(reseeder, "onpulse", True)
+    _setpar(reseeder, "active", True)
+    reseeder.text = (
+        "def onPulse(par):\n"
+        "    par.owner.store('rs', absTime.frame)\n"
+    )
+    try:
+        c.store("rs", -99)
+    except Exception:
+        pass
+
+    n = _glsl_vec2(state, 0, "uRes", "me.width", "me.height")
+    n = _glsl_uniforms(state, [
+        ("uTime", "absTime.seconds"),
+        ("uBass", rex["bass"]), ("uMid", rex["mid"]), ("uHigh", rex["high"]),
+        ("uLevel", rex["level"]), ("uBeat", rex["beat"]),
+        ("uFeed", "parent().par.Feed"), ("uKill", "parent().par.Kill"),
+        ("uReseed", "1.0 if (absTime.frame - parent().fetch('rs', -99)) in (0, 1) else 0.0"),
+    ], start=n)
+
+    color = _create(c, "glslTOP", "rd_color", 20, 0)
+    _connect(state, color, 0)
+    _setpar(color, "pixeldat", _shader_dat(c, "rd_color_src", "rd_color.frag", 20, 150))
+    nn = _glsl_vec2(color, 0, "uRes", "me.width", "me.height")
+    _glsl_uniforms(color, [
+        ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
+        ("uHigh", rex["high"]), ("uBeat", rex["beat"]),
+        ("uPalette", "parent().par.Palette.menuIndex"),
+    ], start=nn)
+
+    out = _glow(c, color, size=8.0, x=240)
+    _cook_driver(c, state)  # keep the feedback advancing while the scene is live
+    try:
+        c.par.Reseed.pulse()  # seed the pattern now
+    except Exception:
+        pass
+    print(f"[td_build] built Reaction-Diffusion -> {c.path}")
+    return c
+
+
+def build_raymarch(dest=None, name="sdf", palette_index=2):
+    """An audio-reactive raymarched SDF: morphing metaballs that twist to the
+    bass and orbit on the bar (single compiled fragment shader)."""
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    reactor, tempo = dest.op("Reactor"), dest.op("Tempo")
+    rex = _react_exprs(reactor)
+    tex = _tempo_exprs(tempo)
+    _glsl_scene_palette(c, palette_index)
+    page = _custom_page(c, "VJ")
+    if not hasattr(c.par, "Reseed"):
+        page.appendPulse("Reseed", label="New Form")
+
+    sdf = _create(c, "glslTOP", "sdf", -120, 0)
+    _setpar(sdf, "resolutionw", 1280)
+    _setpar(sdf, "resolutionh", 720)
+    _setpar(sdf, "pixeldat", _shader_dat(c, "sdf_src", "raymarch.frag", -120, 160))
+    n = _glsl_vec2(sdf, 0, "uRes", "me.width", "me.height")
+    _glsl_uniforms(sdf, [
+        ("uTime", "absTime.seconds"),
+        ("uBass", rex["bass"]), ("uMid", rex["mid"]), ("uHigh", rex["high"]),
+        ("uLevel", rex["level"]), ("uBeat", rex["beat"]), ("uBar", tex["bar"]),
+        ("uPalette", "parent().par.Palette.menuIndex"),
+    ], start=n)
+
+    out = _glow(c, sdf, size=10.0, x=120)
+    _cook_driver(c, sdf)
+    print(f"[td_build] built Raymarch SDF -> {c.path}")
+    return c
+
+
+# ---------------------------------------------------------------------------
+# Master post-FX + waveform overlay
+# ---------------------------------------------------------------------------
+def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
+    """Composite a creative waveform/spectrum visualiser over ``src``,
+    gated by the 'Wavevis' toggle. Returns the mixed TOP (or ``src``)."""
+    if reactor is None or reactor.op("wave_tex") is None:
+        return src
+    rex = _react_exprs(reactor)
+    ov = _create(container, "glslTOP", name + "_glsl", x, y - 160)
+    _setpar(ov, "resolutionw", 1280)
+    _setpar(ov, "resolutionh", 720)
+    _setpar(ov, "pixeldat", _shader_dat(container, name + "_src", "waveform_tunnel.frag", x, y - 320))
+    _connect(reactor.op("wave_tex"), ov, 0)
+    _connect(reactor.op("spec_tex"), ov, 1)
+    n = _glsl_vec2(ov, 0, "uRes", "me.width", "me.height")
+    _glsl_uniforms(ov, [
+        ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
+        ("uBeat", rex["beat"]), ("uBass", rex["bass"]), ("uPalette", 3),
+    ], start=n)
+
+    lvl = _create(container, "levelTOP", name + "_op", x + 160, y - 160)
+    _connect(ov, lvl)
+    _expr(lvl, "opacity", "parent().par.Wavevis")
+    comp = _create(container, "compositeTOP", name, x + 160, y)
+    _setpar(comp, "operand", "over")
+    _connect(lvl, comp, 0)   # overlay on top
+    _connect(src, comp, 1)
+    return comp
+
+
+def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
+    """The master GLSL post chain: beat punch, chromatic aberration, optional
+    kaleidoscope, scanline shimmer and vignette. Returns the processed TOP."""
+    rex = _react_exprs(reactor)
+    tex = _tempo_exprs(tempo)
+    post = _create(container, "glslTOP", name, x, y)
+    _setpar(post, "pixeldat", _shader_dat(container, name + "_src", "post_fx.frag", x, y - 170))
+    _connect(src, post, 0)
+    n = _glsl_vec2(post, 0, "uRes", "me.width", "me.height")
+    _glsl_uniforms(post, [
+        ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
+        ("uBeat", rex["beat"]), ("uHigh", rex["high"]), ("uBar", tex["bar"]),
+        ("uKaleido", "parent().par.Kaleido"),
+        ("uRGBShift", "parent().par.Rgbshift"),
+        ("uPunch", "parent().par.Punch"),
+    ], start=n)
+    return post
+
+
+def _reactive_bindings(base, reactor, tempo):
+    """Bind a tasteful set of *non-APC* scene params to the audio so the show
+    evolves on its own. (APC faders own Trail/Orbit/Pointsize/Crossfade, so we
+    deliberately avoid those to keep manual control of them.)"""
+    rex = _react_exprs(reactor)
+    if reactor is None:
+        return
+
+    def bind(path, par, expr):
+        o = base.op(path)
+        if o is not None:
+            _bindexpr(o, par, expr)
+
+    bind("ising/sim", "Temperature", f"2.27 + 0.30*{rex['bass']} - 0.10*{rex['high']}")
+    bind("ising/sim", "Wallglow", f"0.5 + 1.2*{rex['high']}")
+    bind("nbody/sim", "Gravity", f"1.0 + 0.8*{rex['bass']}")
+    bind("flow/sim", "Speed", f"1.4*(1.0 + 0.9*{rex['level']})")
+    bind("flow/sim", "Evolve", f"0.10 + 0.30*{rex['bass']}")
+    bind("softbody/sim", "Spin", f"1.0 + 1.5*{rex['mid']}")
+
+
+# ---------------------------------------------------------------------------
+# Professional lighting + a compiled glow material
+# ---------------------------------------------------------------------------
+def _light_rig(container, reactor=None, x=-200, y=300):
+    """A 3-point rig: warm key, cool fill, bright rim -- the lighting that
+    makes 3D read as 'pro'. Rim intensity pulses with the beat if a Reactor is
+    given. Returns a list of Light COMPs to hand to a Render TOP."""
+    rex = _react_exprs(reactor)
+    key = _create(container, "lightCOMP", "key", x, y)
+    _setpar(key, "tx", 6.0); _setpar(key, "ty", 7.0); _setpar(key, "tz", 6.0)
+    _setpar(key, "colorr", 1.0); _setpar(key, "colorg", 0.85); _setpar(key, "colorb", 0.65)
+    fill = _create(container, "lightCOMP", "fill", x, y - 120)
+    _setpar(fill, "tx", -7.0); _setpar(fill, "ty", 2.0); _setpar(fill, "tz", 4.0)
+    _setpar(fill, "colorr", 0.4); _setpar(fill, "colorg", 0.6); _setpar(fill, "colorb", 1.0)
+    _setpar(fill, "dimmer", 0.5)
+    rim = _create(container, "lightCOMP", "rim", x, y - 240)
+    _setpar(rim, "tx", 0.0); _setpar(rim, "ty", 4.0); _setpar(rim, "tz", -8.0)
+    _setpar(rim, "colorr", 0.9); _setpar(rim, "colorg", 0.95); _setpar(rim, "colorb", 1.0)
+    if reactor is not None:
+        _bindexpr(rim, "dimmer", f"1.0 + 2.0*{rex['beat']}")
+    return [key, fill, rim]
+
+
+def _glow_mat(container, reactor=None, name="glow_mat", x=-200, y=-180):
+    """Compiled GLSL MAT: emissive core + Fresnel rim, audio-reactive. Looks
+    expensive, costs little, and blooms through the scene glow pass."""
+    rex = _react_exprs(reactor)
+    mat = _create(container, "glslMAT", name, x, y)
+    _setpar(mat, "vertexdat", _shader_dat(container, name + "_vert", "glow_mat.vert", x, y - 130, prepend_common=False))
+    _setpar(mat, "pixeldat", _shader_dat(container, name + "_pix", "glow_mat.pixel", x + 150, y - 130, prepend_common=False))
+    _glsl_uniforms(mat, [("uLevel", rex["level"]), ("uBeat", rex["beat"])])
+    return mat
+
+
+# ---------------------------------------------------------------------------
+# POPs: GPU particles in huge, organic, physics-driven numbers
+# ---------------------------------------------------------------------------
+def build_pops(dest=None, name="pops", palette="acid", count=200000):
+    """A GPU particle storm built with TouchDesigner's POP family (the new
+    GPU-resident 3D operators). Particles are emitted from a sphere, driven by
+    a radial force + curl-style noise so they swirl in organic, physical ways,
+    and rendered with the compiled glow material under a 3-point light rig.
+
+    POPs require TouchDesigner 2023.30000+ (officially 2024+). If the POP
+    operators aren't available on this build, this falls back to a high-count
+    curl-noise particle scene (the proven Flow callback) so the slot always
+    renders -- just with fewer particles than POPs would allow.
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    reactor, tempo = dest.op("Reactor"), dest.op("Tempo")
+    rex = _react_exprs(reactor)
+    _glsl_scene_palette(c, 5)
+
+    geo = _create(c, "geometryCOMP", "geo", -260, 0)
+    for child in list(geo.children):
+        try:
+            child.destroy()
+        except Exception:
+            pass
+
+    # --- Attempt the real POP network -------------------------------------
+    emitter = _try_create(geo, "spherePOP", "emitter")
+    particle = _try_create(geo, "particlePOP", "sim") if emitter is not None else None
+
+    if emitter is not None and particle is not None:
+        _setpar(emitter, "radius", 1.5)
+        _connect(emitter, particle, 0)
+        _setpar(particle, "maxparticles", int(count))
+        _setpar(particle, "birthrate", max(1000, int(count / 20)))
+        _setpar(particle, "lifeexpect", 6.0)
+        _setpar(particle, "lifevariance", 2.0)
+        _setpar(particle, "velocitydamping", 0.04)
+        _setpar(particle, "enabletimeintegration", True)
+        # Forces in a feedback loop: a radial push + turbulent noise.
+        force = _try_create(geo, "forceradialPOP", "force")
+        noise = _try_create(geo, "noisePOP", "turb")
+        nullp = _try_create(geo, "nullPOP", "loop")
+        chain_tail = particle
+        if force is not None:
+            _connect(chain_tail, force, 0)
+            _bindexpr(force, "force", f"-2.0 - 6.0*{rex['bass']}")
+            chain_tail = force
+        if noise is not None:
+            _connect(chain_tail, noise, 0)
+            for pn, val in (("amp", 2.5), ("period", 3.0)):
+                _setpar(noise, pn, val)
+            _bindexpr(noise, "amp", f"1.5 + 4.0*{rex['mid']}")
+            chain_tail = noise
+        if nullp is not None:
+            _connect(chain_tail, nullp, 0)
+            chain_tail = nullp
+        # Close the feedback loop so the forces integrate into the particles.
+        for fbpar in ("targetfeedbackpop", "feedbackpop", "targetpop"):
+            if _setpar(particle, fbpar, chain_tail):
+                break
+        render_pop = chain_tail
+        try:
+            render_pop.render = True
+            render_pop.display = True
+        except Exception:
+            pass
+        # Tell the Geometry COMP to render the POP (param name varies by build).
+        for gp in ("pop", "poprender", "rendersop"):
+            if _setpar(geo, gp, render_pop):
+                break
+        built_pops = True
+    else:
+        # --- Fallback: proven curl-noise flow at a high particle count -----
+        print("[td_build] POPs unavailable -- falling back to curl-noise flow.")
+        sim = _create(geo, "scriptCHOP", "sim", -460, 0)
+        _install_callbacks(sim, "particles_chop.py")
+        _setpar(sim, "Mode", "flow")
+        _setpar(sim, "Palette", palette)
+        _setpar(sim, "Count", min(int(count), 120000))
+        _setpar(sim, "Pointsize", 0.012)
+        sph = geo.create("sphereSOP", "shape")
+        _setpar(sph, "type", "poly"); _setpar(sph, "rows", 4); _setpar(sph, "cols", 6)
+        try:
+            sph.render = sph.display = True
+        except Exception:
+            pass
+        _setpar(geo, "instancing", True)
+        _setpar(geo, "instanceop", sim)
+        for p, ch in (("instancetx", "c0"), ("instancety", "c1"), ("instancetz", "c2"),
+                      ("instancesx", "c6"), ("instancesy", "c6"), ("instancesz", "c6"),
+                      ("instancer", "c3"), ("instanceg", "c4"), ("instanceb", "c5")):
+            _setpar(geo, p, ch)
+        _setpar(geo, "instancecolormode", "mult")
+        built_pops = False
+
+    # Compiled glow material + 3-point lighting (shared by both paths).
+    mat = _glow_mat(c, reactor)
+    _setpar(geo, "material", mat)
+    lights = _light_rig(c, reactor)
+    _orbit(c, geo, default=5.0)
+    cam = _camera(c, dist=8.0)
+    r = _render(c, geo, cam, lights[0])
+    try:
+        r.par.lights = " ".join(l.name for l in lights)  # all three
+    except Exception:
+        pass
+    tr = _trails(c, r, amount=0.92)
+    out = _glow(c, tr, size=18.0, x=640)
+    if not built_pops:
+        _cook_driver(c, geo.op("sim"))
+    print(f"[td_build] built POP particle storm -> {c.path} "
+          f"({'POPs' if built_pops else 'flow fallback'})")
+    return c

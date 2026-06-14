@@ -148,6 +148,55 @@ The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
 palette→colour map) are constants at the top of `apc_mini.py` — re-map the
 surface by editing those, not the wiring.
 
+## The GLSL / audio / tempo / POP layer
+
+The same split as the physics scenes applies: testable numpy cores +
+hot-swappable assets + a thin, defensive TD adapter.
+
+* **Audio (`physics/audio.py` → `callbacks/audio_chop.py`).** `AudioAnalyzer`
+  does a windowed rFFT, splits perceptual bands (bass/mid/high) and tracks RMS
+  with an asymmetric attack/release envelope; `BeatTracker` is an adaptive
+  energy onset detector; all unit-tested in `tests/test_audio.py`. The Script
+  CHOP reads input 0's samples via `numpyArray()` and emits one sample per
+  channel. `build_reactor` also builds waveform + spectrum row textures
+  (CHOP-to-TOP) for the visualiser.
+* **Tempo (`physics/audio.py:TempoClock` → `callbacks/tempo_chop.py`).** A
+  24-PPQN clock follower with a free-running manual-BPM fallback. The paired
+  MIDI In DAT forwards realtime messages to `tempo_chop.on_realtime`; the Script
+  CHOP queries `TempoClock.phase(absTime.seconds)` each frame for continuous
+  beat/bar position.
+* **Shaders (`touchdesigner/shaders/`).** `td_build._load_shader` prepends
+  `common.glsl` (TD has no `#include`) and drops the source into a Text DAT set
+  as the GLSL TOP/MAT `pixeldat`/`vertexdat`. Reaction-diffusion runs in a
+  Feedback TOP loop at 32-bit float; the raymarch/post/waveform shaders are
+  single-pass. Uniforms are bound to expressions reading the Reactor/Tempo CHOPs
+  via `_glsl_uniforms` (the GLSL-TOP "Vectors" slots).
+* **POPs (`build_pops`).** Attempts a real POP network (`spherePOP` →
+  `particlePOP` with `forceradialPOP`/`noisePOP` in a feedback loop) and falls
+  back to the proven curl-noise Flow callback if the family isn't available.
+  Both paths share the compiled glow MAT + 3-point light rig.
+
+### Version-sensitive spots (verify on first load)
+
+This layer follows standard TD conventions but is built to be edited, since a
+few APIs vary by build. All assignments are wrapped, so a mismatch degrades
+gracefully (a uniform stays 0, a scene falls back) rather than breaking the
+build. Glance at these:
+
+1. **GLSL-TOP uniform slots.** `_glsl_uniforms` writes `uninameN` / `valueNx`.
+   If your build names them differently, the shaders still compile — just bind
+   the listed uniforms by hand on each GLSL TOP's *Vectors* page. The uniform
+   names each shader expects are documented in its header comment.
+2. **POP operators/parameters** (`build_pops`): the create type strings
+   (`particlePOP`, `forceradialPOP`, `noisePOP`, `spherePOP`, `nullPOP`) and the
+   feedback-loop / render parameter names. If POPs aren't in your build it
+   silently uses the Flow fallback.
+3. **MIDI realtime clock delivery** (`tempo_chop`): whether your TD delivers
+   clock/start/stop through the MIDI In DAT callback, and the exact `message`
+   text. The manual-BPM path always works regardless.
+4. **`audiodeviceinCHOP` / `choptopTOP` / `audiospectrumCHOP`** device + param
+   names on the Reactor.
+
 ## Going further
 
 * **Trails:** built in (`_trails`) — a **Feedback TOP** → **Level** (decay) →

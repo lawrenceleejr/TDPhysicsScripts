@@ -51,6 +51,30 @@ def test_td_build_imports_and_exposes_builders():
         assert os.path.isfile(os.path.join(td_build._CALLBACK_DIR, name)), name
 
 
+def test_shader_files_present_and_nonempty():
+    """Every GLSL file td_build loads must exist and be non-trivial."""
+    shader_dir = os.path.join(ROOT, "touchdesigner", "shaders")
+    expected = [
+        "common.glsl", "reaction_diffusion.frag", "rd_color.frag",
+        "raymarch.frag", "waveform_tunnel.frag", "post_fx.frag",
+        "glow_mat.vert", "glow_mat.pixel",
+    ]
+    for f in expected:
+        path = os.path.join(shader_dir, f)
+        assert os.path.isfile(path), f
+        assert len(open(path).read()) > 50, f
+
+
+def test_new_builders_exposed():
+    td_build = importlib.import_module("touchdesigner.td_build")
+    for fn in ("build_reactor", "build_tempo", "build_reaction_diffusion",
+               "build_raymarch", "build_pops"):
+        assert callable(getattr(td_build, fn)), fn
+    # The audio/tempo callbacks must exist on disk.
+    for name in ("audio_chop.py", "tempo_chop.py"):
+        assert os.path.isfile(os.path.join(td_build._CALLBACK_DIR, name)), name
+
+
 def test_repo_path_bake_substitution():
     """The substitution td_build performs must actually change the line."""
     td_build = importlib.import_module("touchdesigner.td_build")
