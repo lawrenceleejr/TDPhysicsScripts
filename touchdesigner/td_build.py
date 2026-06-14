@@ -502,6 +502,123 @@ def build_opendata(dest=None, name="opendata"):
     return c
 
 
+def build_apc(dest=None, target=None, name="APCShow", device=1):
+    """Build an Akai APC mini mk2 control surface for a PhysicsVJ component.
+
+    Creates a self-contained ``APCShow`` COMP that maps the APC's pads, buttons
+    and faders to the whole show (scene cuts, palette launches, the A/B
+    crossfader, freerun, per-scene re-fire) and drives the controller's RGB LEDs
+    to mirror the live state. Includes a ``Reset`` mechanism (and a hardware
+    Reset button) that re-handshakes the surface and repaints every LED -- use
+    it whenever the APC powers on dark or its lights drift out of sync.
+
+    ``target`` is the PhysicsVJ COMP (or its path). If omitted, it points at a
+    sibling named ``PhysicsVJ``. ``device`` is the MIDI Device Mapper id that
+    your APC is mapped to (set the same id in TD's MIDI Device Mapper dialog).
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+
+    # Anchor Script CHOP: hosts onSetupParameters (builds the custom page) and
+    # is harmless to cook. The real behaviour lives in the apc_mini module and
+    # the two event DATs below.
+    anchor = _create(c, "scriptCHOP", "controller", -300, 0)
+    _install_callbacks(anchor, "apc_mini.py")
+
+    target_path = "../PhysicsVJ"
+    if target is not None:
+        target_path = target if isinstance(target, str) else target.path
+    elif dest.op("PhysicsVJ") is not None:
+        target_path = dest.op("PhysicsVJ").path
+    _setpar(c, "Target", target_path)
+    _setpar(c, "Device", device)
+
+    # MIDI input from the APC -> note/CC handling.
+    midiin = _create(c, "midiinDAT", "midiin", -300, 200)
+    _setpar(midiin, "id", device)
+    _setpar(midiin, "device", device)
+    in_cb = _create(c, "textDAT", "midiin_callbacks", -300, 330)
+    in_cb.text = (
+        "import sys\n"
+        f"sys.path.insert(0, r\"{REPO}\")\n"
+        "from touchdesigner.callbacks import apc_mini\n\n"
+        "def onReceiveMIDI(dat, rowIndex, message, channel, index, value, input, bytes):\n"
+        "    try:\n"
+        "        apc_mini.on_midi(dat.parent(), message, channel, index, value)\n"
+        "    except Exception as e:\n"
+        "        debug('[apc] midi', e)\n"
+        "    return\n"
+    )
+    _setpar(midiin, "callbacks", in_cb)
+    _setpar(midiin, "active", True)
+
+    # LED output back to the APC (Note On with behaviour-selecting channel).
+    ledout = _create(c, "midioutCHOP", "ledout", -100, 200)
+    _setpar(ledout, "id", device)
+    _setpar(ledout, "device", device)
+
+    # Watch the show + the surface's own pars; repaint LEDs / handle Reset.
+    watch = _create(c, "parameterexecuteDAT", "statewatch", 100, 200)
+    _setpar(watch, "op", target_path)
+    _setpar(watch, "pars", "Scene Nextscene Crossfade Freerunall")
+    _setpar(watch, "valuechange", True)
+    _setpar(watch, "active", True)
+    watch.text = (
+        "import sys\n"
+        f"sys.path.insert(0, r\"{REPO}\")\n"
+        "from touchdesigner.callbacks import apc_mini\n\n"
+        "def onValueChange(par, prev):\n"
+        "    try:\n"
+        "        apc_mini.repaint(me.parent())\n"
+        "    except Exception as e:\n"
+        "        debug('[apc] repaint', e)\n"
+    )
+
+    # Catch the surface's own Reset pulse (its pars live on this COMP).
+    selfwatch = _create(c, "parameterexecuteDAT", "selfwatch", 100, 330)
+    _setpar(selfwatch, "op", c)
+    _setpar(selfwatch, "pars", "Reset Device")
+    _setpar(selfwatch, "onpulse", True)
+    _setpar(selfwatch, "valuechange", True)
+    _setpar(selfwatch, "active", True)
+    selfwatch.text = (
+        "import sys\n"
+        f"sys.path.insert(0, r\"{REPO}\")\n"
+        "from touchdesigner.callbacks import apc_mini\n\n"
+        "def onPulse(par):\n"
+        "    try:\n"
+        "        apc_mini.reset(par.owner)\n"
+        "    except Exception as e:\n"
+        "        debug('[apc] reset', e)\n\n"
+        "def onValueChange(par, prev):\n"
+        "    # Re-route MIDI ops if the device id changes, then resync.\n"
+        "    try:\n"
+        "        c = par.owner\n"
+        "        for nm in ('midiin', 'ledout'):\n"
+        "            o = c.op(nm)\n"
+        "            if o is not None:\n"
+        "                for pn in ('id', 'device'):\n"
+        "                    if hasattr(o.par, pn):\n"
+        "                        setattr(o.par, pn, par.eval())\n"
+        "        apc_mini.reset(c)\n"
+        "    except Exception as e:\n"
+        "        debug('[apc] device', e)\n"
+    )
+
+    # Paint the initial LED state now.
+    try:
+        from touchdesigner.callbacks import apc_mini
+        apc_mini.reset(c)
+    except Exception as e:
+        print(f"[td_build] initial APC repaint skipped: {e}")
+
+    print(f"[td_build] built APC mini mk2 surface -> {c.path} (target {target_path})")
+    print("[td_build] In TD's MIDI Device Mapper, map your APC mini mk2 to "
+          f"device id {device}. Press the top-right button (or the Reset par) "
+          "to resync LEDs.")
+    return c
+
+
 def _orbit(container, geo, default=8.0):
     """Add an 'Orbit' (deg/sec) control and slowly rotate the geometry."""
     page = _custom_page(container, "VJ")
@@ -518,7 +635,7 @@ def _orbit(container, geo, default=8.0):
 # ---------------------------------------------------------------------------
 # Master build: every scene + a live switcher
 # ---------------------------------------------------------------------------
-def build_all(dest=None, name="PhysicsVJ"):
+def build_all(dest=None, name="PhysicsVJ", apc=True):
     dest = dest or op("/")  # noqa: F821
     base = _create(dest, "baseCOMP", name)
 
@@ -604,4 +721,12 @@ def build_all(dest=None, name="PhysicsVJ"):
     print(f"[td_build] built PhysicsVJ with {len(outs)} scenes -> {base.path}")
     print("[td_build] View 'out' in Perform mode. Cut with 'Scene'; blend with "
           "'Nextscene' + 'Crossfade'.")
+
+    # An APC mini mk2 surface to run the whole show from hardware.
+    if apc:
+        try:
+            build_apc(dest=dest, target=base)
+        except Exception as e:
+            print(f"[td_build] APC surface skipped: {e}")
+
     return base

@@ -120,6 +120,34 @@ so a single sim runs in steady state and both run only mid-fade. For a plain
 instant-only switcher, drop deck B + the Cross TOP and drive one Switch TOP's
 `index` from `Scene`.
 
+## The APC mini mk2 surface (build_apc)
+
+`build_apc` assembles an **`APCShow`** COMP that drives a `PhysicsVJ` from an
+Akai APC mini mk2 and lights its RGB grid to match. It's event-driven, not
+per-frame: all behaviour lives in `callbacks/apc_mini.py` as plain functions,
+and three small operators call into it:
+
+* a **MIDI In DAT** (`midiin`) whose `onReceiveMIDI` forwards every message to
+  `apc_mini.on_midi(apc, message, channel, index, value)`. Notes 0–63 cut a
+  scene + palette (`note = row*8 + col`); the round buttons arm deck B, commit
+  the crossfade, toggle freerun, reset and re-fire; CCs 48–56 are the faders.
+* a **MIDI Out CHOP** (`ledout`). `sendMIDI('note', channel, note, velocity)`
+  lights a pad: `velocity` is the APC's 128-colour index and the **channel
+  selects the behaviour** (ch 1–7 = 10 %→100 % solid, 8–11 = pulse, 12–16 =
+  blink). `apc_mini.repaint` redraws the whole surface from the show's `Scene`,
+  `Nextscene`, `Crossfade`, `Freerunall` and each scene's `Palette`.
+* two **Parameter Execute DATs**: `statewatch` repaints when the show changes
+  (so mouse and MIDI stay in sync), and `selfwatch` catches the surface's own
+  `Reset` pulse and `Device` changes.
+
+**Reset** (`apc_mini.reset`) blanks every LED, then repaints — the recovery
+path for a controller that powered on dark, was hot-plugged, or drifted out of
+sync. `build_all(apc=True)` (the default) wires this in pointing at the show.
+
+The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
+palette→colour map) are constants at the top of `apc_mini.py` — re-map the
+surface by editing those, not the wiring.
+
 ## Going further
 
 * **Trails:** built in (`_trails`) — a **Feedback TOP** → **Level** (decay) →

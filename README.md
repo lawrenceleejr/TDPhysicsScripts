@@ -125,6 +125,40 @@ tuned to glow on black.
 
 ---
 
+## Run the whole show from an APC mini mk2
+
+`build_all` also drops an **`APCShow`** component that turns an
+[Akai APC mini mk2](https://www.akaipro.com/apc-mini-mk2) into a hands-on
+control surface for the entire set — and lights its RGB pads to mirror the live
+state. (It's built automatically; pass `apc=False` to `build_all`, or run
+`td_build.build_apc(op('/'))` / the `build_apcshow.py` launcher to add it to an
+existing `PhysicsVJ`.)
+
+**Set up the device:** open TouchDesigner's **MIDI Device Mapper**, map your APC
+mini mk2 to a device id, and set the same id in `APCShow`'s **`Device`**
+parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`).
+
+**The control map** (factory mode, MIDI channel 1):
+
+| Control | Does |
+|---------|------|
+| **8×8 grid** | Columns 0–5 = the six scenes, rows 0–6 = the seven palettes. Press a pad to **instant-cut** to that scene *and* set its palette. Pads glow in each palette's signature colour; the live scene's column is bright and its active-palette pad **pulses**. |
+| **Track buttons 1–6** (below grid) | Arm scene 0–5 onto **deck B** (`Nextscene`) — the armed one blinks. |
+| **Track button 7** | **Cut** — commit the crossfade B→A (lit while a fade is in progress). |
+| **Track button 8** | **Freerun All** toggle (lit while on). |
+| **Scene button 1** (top-right) | **Reset** the controller — re-handshake and repaint every LED. |
+| **Scene button 2** | **Re-fire** the live scene (new collision / next event / reset). |
+| **Master fader (9)** | **Crossfade** A/B. |
+| **Faders 1 / 2 / 3** | Live scene **Trail / Orbit / Point Size**. Faders 4–8 are free. |
+
+**The reset mechanism.** APC controllers come up dark, can be hot-plugged, and
+their LEDs drift out of sync if the show is also driven from the mouse. The
+top-right **Reset** pad (and the `Reset` parameter) blanks every LED and
+repaints the full state in one shot — your safety net mid-set. Changing the
+`Device` id re-routes MIDI and resyncs automatically.
+
+---
+
 ## Performance
 
 Defaults target 60 fps for a single active scene on a modern GPU. Tune the
