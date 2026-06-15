@@ -83,6 +83,25 @@ install needed to *use* these scripts).
 > launchers in `touchdesigner/builders/` — load one into a Text DAT, turn on
 > *Sync to File*, and Run. They auto-locate the repo.
 
+### Command-line workflow (no copy-paste loop)
+
+A `.toe` is a binary only TouchDesigner can write, so there's a **one-time**
+in-app step; after that, rebuilding is a single shell command.
+
+1. **Once:** in TouchDesigner, run `touchdesigner/builders/make_bootstrap.py`
+   in a Text DAT. It adds an Execute DAT that builds the show on every launch
+   and saves `physicsvj.toe` at the repo root.
+2. **From then on**, from a terminal:
+   ```bash
+   ./tools/run_td.sh           # git pull, open TD, rebuild from latest files
+   ./tools/run_td.sh --check   # pull, rebuild headless, print build_report.txt, quit
+   ```
+   Each launch is a fresh process, so it always picks up the newest code — no
+   module-cache dance. `--check` writes/prints **`build_report.txt`** (TD version,
+   the `[td_build]` log, and every operator error) — paste that one report when
+   something looks off and it pinpoints the exact node. Override the TD binary
+   with `TOUCHDESIGNER_APP=...` if it's not at the default macOS path.
+
 To build a single scene instead of all of them:
 ```python
 td_build.build_nbody(op('/'))        # just the galaxies
