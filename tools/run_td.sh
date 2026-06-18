@@ -43,10 +43,35 @@ if [ ! -f "$TOE" ]; then
 fi
 
 if [ "${1:-}" = "--check" ]; then
-  echo "==> headless rebuild ($TOE)"
-  PHYSICSVJ_QUIT=1 "$TD" "$TOE"
+  REPORT="$REPO/build_report.txt"
+  TIMEOUT="${PHYSICSVJ_TIMEOUT:-300}"
+  rm -f "$REPORT"
+  echo "==> headless rebuild ($TOE), up to ${TIMEOUT}s"
+  # Run TD in the background so we never wait on it forever (e.g. if quit fails
+  # or a startup dialog appears). Poll for the report's END marker, then stop TD.
+  PHYSICSVJ_QUIT=1 "$TD" "$TOE" >/dev/null 2>&1 &
+  TDPID=$!
+  done=0
+  for _ in $(seq 1 "$TIMEOUT"); do
+    if [ -f "$REPORT" ] && grep -q "== END ==" "$REPORT" 2>/dev/null; then done=1; break; fi
+    kill -0 "$TDPID" 2>/dev/null || break   # TD exited on its own
+    sleep 1
+  done
+  kill "$TDPID" 2>/dev/null; sleep 1; kill -9 "$TDPID" 2>/dev/null
   echo "================ build_report.txt ================"
-  cat "$REPO/build_report.txt" 2>/dev/null || echo "(no report written)"
+  if [ -f "$REPORT" ]; then
+    cat "$REPORT"
+    if [ "$done" != 1 ]; then
+      echo
+      echo "*** build did NOT reach the end within ${TIMEOUT}s ***"
+      echo "*** the log above stops at the operation that stalled ***"
+    fi
+  else
+    echo "(no report written within ${TIMEOUT}s)"
+    echo "TD likely didn't run onStart -- e.g. a startup dialog is blocking, or the"
+    echo "'physics_startup' Execute DAT wasn't created. Open physicsvj.toe once in the"
+    echo "GUI to dismiss any dialog and confirm that DAT exists at '/', then retry."
+  fi
 else
   echo "==> launching TouchDesigner ($TOE)"
   "$TD" "$TOE"
