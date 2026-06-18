@@ -265,10 +265,19 @@ def _render(container, geo, cam, light, name="render", x=200, y=200, w=1280, h=7
     return r
 
 
-def _glow(container, src, name="out", size=14.0, x=460, y=200):
-    """Add a soft bloom over solid black and output a stable 'out' null TOP."""
+def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
+    """Add a soft, *selective* bloom over solid black and output 'out'.
+
+    A Level TOP raises the black point (``threshold``) so only bright/HDR
+    sources feed the blur -- this is the difference between a hazy full-frame
+    haze and a glow that picks out the neon highlights. Set threshold=0 to
+    bloom everything (the old behaviour)."""
+    bright = _create(container, "levelTOP", name + "_bright", x, y - 280)
+    _connect(src, bright)
+    _setpar(bright, "blacklevel", threshold)   # clamp dim pixels to black
+
     blur = _create(container, "blurTOP", name + "_blur", x, y - 150)
-    _connect(src, blur)
+    _connect(bright, blur)
     _setpar(blur, "size", size)
 
     black = _create(container, "constantTOP", name + "_bg", x, y - 300)

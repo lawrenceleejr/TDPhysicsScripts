@@ -56,7 +56,12 @@ void main() {
     // Vignette + a touch of overall lift on loud passages.
     float vig = smoothstep(1.1, 0.3, length(c));
     col *= vig * (1.0 + uLevel * 0.25);
-    col += uBeat * 0.04;
+
+    // Expose (push harder on beats) then ACES filmic tonemap: HDR neon and
+    // bloom roll off to white smoothly instead of clipping to a flat blob.
+    col = acesFilm(col * (1.15 + uBeat * 0.35));
+    // Dither last, in display space, to remove banding on the dark gradients.
+    col = dither(col, gl_FragCoord.xy + uTime);
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));
 }

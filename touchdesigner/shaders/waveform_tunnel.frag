@@ -28,9 +28,11 @@ void main() {
     vec3 col = vec3(0.0);
     float alpha = 0.0;
 
+    // Resolution-independent line half-widths (~px / frame height).
+    float lw = 2.5 / uRes.y;
     // --- Horizontal oscilloscope across the lower third ---
     float w = waveform(uv.x) * (0.18 + uLevel * 0.25);
-    float scope = smoothstep(0.012, 0.0, abs((uv.y - 0.5) - w));
+    float scope = smoothstep(lw, 0.0, abs((uv.y - 0.5) - w));
     col += neon(uv.x, int(uPalette)) * scope * 1.6;
     alpha = max(alpha, scope);
 
@@ -40,13 +42,13 @@ void main() {
     float fx = fract(ang / TAU + 0.5);
     float s = spectrum(fx);
     float ring = 0.32 + uBass * 0.12 + uBeat * 0.05;
-    float bar = smoothstep(0.02, 0.0, abs(rad - (ring + s * 0.28)));
+    float bar = smoothstep(2.0 * lw, 0.0, abs(rad - (ring + s * 0.28)));
     vec3 rc = neon(fract(fx + uTime * 0.05), int(uPalette));
     col += rc * bar * (1.2 + uBeat);
     alpha = max(alpha, bar);
 
     // Soft inner glow ring on the beat.
-    float halo = smoothstep(0.02, 0.0, abs(rad - ring)) * (0.3 + uBeat);
+    float halo = smoothstep(2.0 * lw, 0.0, abs(rad - ring)) * (0.3 + uBeat);
     col += rc * halo;
     alpha = max(alpha, halo * 0.6);
 

@@ -39,4 +39,24 @@ mat2 rot(float a) {
     return mat2(c, -s, s, c);
 }
 
+// normalize() that never returns NaN for a zero/near-zero vector.
+vec3 safeNorm(vec3 v) {
+    float l = length(v);
+    return l > 1e-8 ? v / l : vec3(0.0, 1.0, 0.0);
+}
+
+// ACES filmic tonemap (Narkowicz fit). Compresses HDR neon into [0,1] while
+// preserving hue, so beat-driven over-bright values roll off to white instead
+// of clipping flat. This is the single biggest "cinematic vs LED" lever.
+vec3 acesFilm(vec3 x) {
+    const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+// ~1 LSB triangular-PDF dither to kill 8-bit banding on smooth gradients.
+vec3 dither(vec3 col, vec2 seed) {
+    float n = hash21(seed) + hash21(seed + 7.13) - 1.0;  // triangular [-1,1]
+    return col + n / 255.0;
+}
+
 #endif

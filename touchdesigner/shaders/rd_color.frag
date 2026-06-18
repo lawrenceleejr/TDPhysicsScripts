@@ -31,7 +31,7 @@ void main() {
 
     vec3 col = body + walls;
     col *= 0.7 + uLevel * 0.8 + uBeat * 0.5;     // pump brightness with the mix
-    col = pow(col, vec3(0.85));                  // gentle lift
+    col = pow(max(col, 0.0), vec3(0.85));        // gentle lift (clamp: pow(neg) is UB)
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));
 }
