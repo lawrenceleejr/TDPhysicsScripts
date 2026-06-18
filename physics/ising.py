@@ -45,7 +45,9 @@ class IsingModel:
 
     # -- evolution -------------------------------------------------------
     def _neighbour_sum(self) -> np.ndarray:
-        s = self.spins.astype(np.int32)
+        # Sum of four +/-1 neighbours stays in [-4, 4], well within int8, so we
+        # avoid an int32 upcast of the whole lattice on every (8x/sweep) call.
+        s = self.spins
         return (
             np.roll(s, 1, axis=0)
             + np.roll(s, -1, axis=0)
@@ -58,8 +60,10 @@ class IsingModel:
         # Energy cost of flipping each spin: dE = 2 s (J * sum_nbr + h).
         dE = 2.0 * self.spins * (self.coupling * nbr + self.field)
         T = max(self.temperature, 1e-6)
-        # Acceptance probability; dE <= 0 gives prob >= 1 (always accept).
-        accept_prob = np.exp(-dE / T)
+        # Acceptance probability; dE <= 0 gives prob >= 1 (always accept). Clamp
+        # the exponent at 0 so exp() never overflows to inf at very low T (the
+        # accept decision is identical, but it stops a per-frame overflow warn).
+        accept_prob = np.exp(np.minimum(-dE / T, 0.0))
         rand = self._rng.random(self.spins.shape)
         flip = mask & (rand < accept_prob)
         self.spins[flip] = -self.spins[flip]

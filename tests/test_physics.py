@@ -254,3 +254,36 @@ def test_dimuon_show_builds_two_tracks():
     assert show.current_mass > 0
     grown = show.grow(0.3)
     assert len(grown) == 2
+
+
+def test_opendata_empty_csv_falls_back(tmp_path):
+    # A present-but-empty CSV must fall back to synthetic, not crash.
+    from physics.opendata import load_dimuon
+    p = tmp_path / "dimuon.csv"
+    p.write_text("E1,px1,py1,pz1,Q1,E2,px2,py2,pz2,Q2,M\n")  # header only
+    d = load_dimuon(str(p))
+    assert len(d["M"]) > 0
+    show = DimuonShow(path=str(p))
+    assert show.n_events > 0 and len(show.tracks) == 2
+
+
+def test_ising_low_temperature_no_overflow():
+    # Very low T used to overflow exp() to inf and spam RuntimeWarnings.
+    import warnings
+    m = IsingModel(size=48, temperature=0.02, seed=1)
+    m.spins[:] = 1
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        m.step(10)
+    assert np.isfinite(m.field01()).all()
+
+
+def test_nbody_merger_stays_finite_long_run():
+    # The galaxy-merger scene runs for a whole set; it must not blow up.
+    sim = NBodySim.two_galaxies(n=200, seed=3)
+    for _ in range(1500):
+        sim.step()
+    assert np.isfinite(sim.pos).all()
+    # Core stays compact: most bodies remain within a sane radius.
+    r = np.linalg.norm(sim.pos - sim.pos.mean(axis=0), axis=1)
+    assert np.median(r) < 40.0

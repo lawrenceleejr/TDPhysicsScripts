@@ -101,6 +101,11 @@ def load_dimuon(path: str | None = None, max_rows: int | None = None) -> dict:
             if max_rows and len(rows) >= max_rows:
                 break
 
+    if not rows:
+        # A present-but-empty CSV (header only / all-blank rows) must not crash;
+        # fall back to the synthetic sample so the visual always has events.
+        return generate_synthetic_dimuon(n=4000, seed=0)
+
     out = {k: np.array([r[k] for r in rows], dtype=np.float64) for k in rows[0]}
     # Recompute M where missing.
     bad = ~np.isfinite(out["M"])
@@ -227,6 +232,9 @@ class DimuonShow:
     ):
         self.data = load_dimuon(path)
         self.n_events = len(self.data["M"])
+        if self.n_events == 0:  # never divide by zero in show_event()
+            self.data = generate_synthetic_dimuon(n=4000, seed=0)
+            self.n_events = len(self.data["M"])
         self.B = float(B)
         self.palette = palette
         self.max_length = float(max_length)

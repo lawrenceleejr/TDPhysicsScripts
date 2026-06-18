@@ -50,8 +50,8 @@ def onSetupParameters(scriptOp):
     scriptOp.par.Gravity.normMin, scriptOp.par.Gravity.normMax = 0.0, 3.0
     page.appendFloat("Timestep", label="Time Step")[0].val = 0.005
     scriptOp.par.Timestep.normMin, scriptOp.par.Timestep.normMax = 0.0005, 0.02
-    page.appendFloat("Softening", label="Softening")[0].val = 0.08
-    scriptOp.par.Softening.normMin, scriptOp.par.Softening.normMax = 0.01, 0.5
+    page.appendFloat("Softening", label="Softening")[0].val = 0.15
+    scriptOp.par.Softening.normMin, scriptOp.par.Softening.normMax = 0.02, 0.6
     sub = page.appendInt("Substeps", label="Substeps / Frame")[0]
     sub.val = 1
     scriptOp.par.Substeps.normMin, scriptOp.par.Substeps.normMax = 1, 6

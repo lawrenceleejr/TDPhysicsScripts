@@ -146,18 +146,30 @@ class HydrogenState:
         v[~safe] = 0.0
         return v
 
-    def sample_density(self, n_samples, t=0.0, extent=None, rng=None, batch=4096):
-        """Rejection-sample ``n_samples`` positions distributed as |psi|^2."""
+    @staticmethod
+    def _ball(n, radius, rng):
+        """``n`` points uniformly distributed in a ball of the given radius."""
+        d = rng.normal(size=(n, 3))
+        d /= np.linalg.norm(d, axis=1, keepdims=True) + 1e-12
+        r = radius * np.cbrt(rng.random(n))
+        return d * r[:, None]
+
+    def sample_density(self, n_samples, t=0.0, extent=None, rng=None, batch=16384):
+        """Rejection-sample ``n_samples`` positions distributed as |psi|^2.
+
+        Proposals are uniform within a *ball* of radius ``extent`` rather than a
+        cube: orbitals are roughly spherical, so the ball wastes far fewer
+        proposals on empty corners (~2x acceptance), cutting scene-init time.
+        """
         rng = rng or np.random.default_rng()
         if extent is None:
             extent = 6.0 * self.nmax ** 2 * 0.5 + 6.0
         # Estimate the peak density to set the rejection ceiling.
-        probe = (rng.random((20000, 3)) * 2 - 1) * extent
-        dmax = float(self.density(probe, t).max()) * 1.3 + 1e-12
+        dmax = float(self.density(self._ball(12000, extent, rng), t).max()) * 1.25 + 1e-12
         out = np.empty((n_samples, 3), dtype=np.float64)
         filled = 0
         while filled < n_samples:
-            cand = (rng.random((batch, 3)) * 2 - 1) * extent
+            cand = self._ball(batch, extent, rng)
             keep = cand[rng.random(batch) * dmax < self.density(cand, t)]
             take = min(len(keep), n_samples - filled)
             out[filled:filled + take] = keep[:take]

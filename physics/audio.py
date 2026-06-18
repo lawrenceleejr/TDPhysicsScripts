@@ -41,6 +41,19 @@ class AudioAnalyzer:
         self.release = float(release)
         self.gain = float(gain)
         self._env = {k: 0.0 for k in BAND_NAMES + ["level"]}
+        self._bins_cache = {}  # (n, sr) -> (window, freqs, band_masks)
+
+    def _bins(self, n):
+        """Cached FFT window, frequency axis and band masks for block size n."""
+        key = (n, self.sr)
+        cached = self._bins_cache.get(key)
+        if cached is None:
+            window = _window(n)
+            freqs = np.fft.rfftfreq(n, 1.0 / self.sr)
+            masks = [(name, (freqs >= lo) & (freqs < hi)) for name, lo, hi in BANDS]
+            cached = (window, freqs, masks)
+            self._bins_cache[key] = cached
+        return cached
 
     def _smooth(self, key, target):
         prev = self._env[key]
@@ -55,13 +68,12 @@ class AudioAnalyzer:
         if n == 0:
             return dict(self._env)
         level_raw = float(np.sqrt(np.mean(x * x)) * self.gain)
-        mag = np.abs(np.fft.rfft(x * _window(n))).astype(np.float32)
+        window, _, masks = self._bins(n)
+        mag = np.abs(np.fft.rfft(x * window)).astype(np.float32)
         # Normalise FFT magnitude by block size so features are scale-stable.
         mag *= (2.0 / n)
-        freqs = np.fft.rfftfreq(n, 1.0 / self.sr)
         out = {}
-        for name, lo, hi in BANDS:
-            m = (freqs >= lo) & (freqs < hi)
+        for name, m in masks:
             energy = float(np.sqrt(np.mean(mag[m] ** 2))) if m.any() else 0.0
             out[name] = self._smooth(name, min(energy * self.gain, 4.0))
         out["level"] = self._smooth("level", min(level_raw, 4.0))

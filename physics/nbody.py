@@ -23,7 +23,7 @@ class NBodySim:
         velocities: np.ndarray,
         masses: np.ndarray,
         G: float = 1.0,
-        softening: float = 0.05,
+        softening: float = 0.12,
         dt: float = 0.005,
     ):
         self.pos = np.asarray(positions, dtype=np.float64).copy()
@@ -198,16 +198,19 @@ class NBodySim:
                 r * np.cos(theta),
             ]
         )
-        # Velocities scaled to the local escape speed (von Neumann rejection).
+        # Velocities scaled to the local escape speed (von Neumann rejection,
+        # vectorised in batches -- the old per-particle Python loop cost ~0.7s
+        # at n=1500, a visible hitch when switching to the cluster scene).
         v_esc = np.sqrt(2.0) * (1.0 + r * r / scale ** 2) ** -0.25
         q = np.empty(n)
-        for i in range(n):
-            while True:
-                x = rng.uniform(0.0, 1.0)
-                g = rng.uniform(0.0, 0.1)
-                if g <= x * x * (1.0 - x * x) ** 3.5:
-                    q[i] = x
-                    break
+        filled = 0
+        while filled < n:
+            x = rng.uniform(0.0, 1.0, size=n)
+            g = rng.uniform(0.0, 0.1, size=n)
+            acc = x[g <= x * x * (1.0 - x * x) ** 3.5]
+            take = min(acc.size, n - filled)
+            q[filled:filled + take] = acc[:take]
+            filled += take
         speed = q * v_esc * np.sqrt(G * total_mass / scale)
         vtheta = np.arccos(rng.uniform(-1.0, 1.0, n))
         vphi = rng.uniform(0.0, 2.0 * np.pi, n)

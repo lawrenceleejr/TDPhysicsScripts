@@ -105,6 +105,7 @@ class CurlNoiseFlow:
         speed: float = 1.6,
         evolve: float = 0.12,
         seed: int | None = None,
+        field_interval: int = 2,
     ):
         self._rng = np.random.default_rng(seed)
         self.n = int(n)
@@ -114,6 +115,12 @@ class CurlNoiseFlow:
         self.speed = float(speed)
         self.evolve = float(evolve)
         self._noise = NoiseField(seed)
+        # The curl field evolves slowly (evolve is small), so rebuilding it
+        # every Nth frame instead of every frame roughly halves the per-frame
+        # cost (the 3 Perlin evals over the grid are the hotspot) with no
+        # visible difference -- particles still advect through it every frame.
+        self.field_interval = max(1, int(field_interval))
+        self._steps = 0
 
         # Static world-space grid covering [-bounds, bounds]^3.
         R = self.grid_res
@@ -148,12 +155,15 @@ class CurlNoiseFlow:
         ]
         h = self._spacing
         # Curl = (dψz/dy - dψy/dz, dψx/dz - dψz/dx, dψy/dx - dψx/dy).
-        g0 = np.gradient(psi[0], h)  # [d/dx, d/dy, d/dz]
-        g1 = np.gradient(psi[1], h)
-        g2 = np.gradient(psi[2], h)
-        vx = g2[1] - g1[2]
-        vy = g0[2] - g2[0]
-        vz = g1[0] - g0[1]
+        # Compute only the two gradient axes each component needs (np.gradient
+        # otherwise builds all three full-size arrays) -- this field rebuild is
+        # the per-frame hotspot of the Flow scene.
+        g0y, g0z = np.gradient(psi[0], h, axis=(1, 2))
+        g1x, g1z = np.gradient(psi[1], h, axis=(0, 2))
+        g2x, g2y = np.gradient(psi[2], h, axis=(0, 1))
+        vx = g2y - g1z
+        vy = g0z - g2x
+        vz = g1x - g0y
         return np.stack([vx, vy, vz], axis=-1).astype(np.float32)
 
     def velocity_at(self, pos: np.ndarray) -> np.ndarray:
@@ -177,7 +187,9 @@ class CurlNoiseFlow:
 
     def step(self, dt: float = 1.0 / 60.0) -> None:
         self.t += dt
-        self.field = self._build_field()
+        if self._steps % self.field_interval == 0:
+            self.field = self._build_field()
+        self._steps += 1
         self.vel = self.velocity_at(self.pos) * self.speed
         self.pos = self.pos + self.vel * dt
         # Wrap through the box so the population stays put and recirculates.
@@ -288,7 +300,10 @@ class ShapeMatchedSoftBody:
         new = self.pos + alpha * (goal - self.pos)
         # A little curl-ish wobble so the surface ripples (bounded, per-step).
         if self.wobble > 0.0:
-            jitter = self._noise.noise(self.pos * 0.5 + self.t * 0.3)
+            # Wrap the time term: float32 Perlin loses fractional precision at
+            # large coordinates, so an unbounded t would freeze the wobble over
+            # a long set. 256 is a noise period boundary, so wrapping is seamless.
+            jitter = self._noise.noise(self.pos * 0.5 + (self.t % 256.0) * 0.3)
             norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
             new = new + (self.wobble * dt) * jitter[:, None] * (p / norm)
         # Derived velocity (for speeds()/colour), with damping.
