@@ -94,42 +94,46 @@ def onCook(scriptOp):
         st["extent"] = 6.0 * state.nmax ** 2 * 0.5 + 6.0
         st["pos"] = _seed(st, n)
         st["key"] = (orbital, n)
+        st["out_frame"] = -1
 
     state = st["state"]
     pos = st["pos"]
 
+    # Integrate + assemble at most once per frame; reuse the last guidance
+    # velocity from the integration loop for colouring (it's an O(N) complex
+    # wavefunction eval over up to 120k points -- don't compute it twice).
     frame = absTime.frame  # noqa: F821 (TD global)
-    if st.get("last_frame") != frame:
-        for _ in range(max(1, substeps)):
+    if st.get("out_frame") != frame:
+        v = None
+        if st.get("last_frame") != frame:
+            for _ in range(max(1, substeps)):
+                v = state.bohm_velocity(pos, st["t"])
+                pos = pos + v * (_DT * speed)
+                st["t"] += _DT
+            # Respawn a fraction (keeps the cloud crisp + alive under trails)
+            # and recycle any electron that wandered well outside the orbital.
+            rate = 1.0 / float(max(getattr(me.time, "rate", 60.0), 1.0))  # noqa: F821
+            frac = min(max(refresh * rate, 0.0), 1.0)
+            far = np.linalg.norm(pos, axis=1) > st["extent"] * 1.4
+            pick = st["rng"].random(pos.shape[0]) < frac
+            respawn = far | pick
+            k = int(respawn.sum())
+            if k:
+                pos[respawn] = _seed(st, k)
+            st["pos"] = pos
+            st["last_frame"] = frame
+        if v is None:
             v = state.bohm_velocity(pos, st["t"])
-            pos = pos + v * (_DT * speed)
-            st["t"] += _DT
-        # Respawn a fraction (keeps the cloud crisp + alive under trails) and
-        # recycle any electron that wandered well outside the orbital.
-        rate = 1.0 / float(max(getattr(me.time, "rate", 60.0), 1.0))  # noqa: F821
-        frac = min(max(refresh * rate, 0.0), 1.0)
-        far = np.linalg.norm(pos, axis=1) > st["extent"] * 1.4
-        pick = st["rng"].random(pos.shape[0]) < frac
-        respawn = far | pick
-        k = int(respawn.sum())
-        if k:
-            pos[respawn] = _seed(st, k)
-        st["pos"] = pos
-        st["last_frame"] = frame
-
-    # Colour by speed (the circulation gradient), scale by point size.
-    v = state.bohm_velocity(pos, st["t"])
-    speeds = np.linalg.norm(v, axis=1)
-    vmax = float(np.percentile(speeds, 92)) if speeds.size else 1.0
-    col = palette.colorize(palette.normalize(speeds, 0.0, max(vmax, 1e-6), gamma=0.6), pal)
-    scale = np.full(pos.shape[0], psize, dtype=np.float32)
-
-    out = np.empty((7, pos.shape[0]), dtype=np.float32)
-    out[0:3] = pos.T.astype(np.float32)
-    out[3:6] = col.T
-    out[6] = scale
+        speeds = np.linalg.norm(v, axis=1)
+        vmax = float(np.percentile(speeds, 92)) if speeds.size else 1.0
+        col = palette.colorize(palette.normalize(speeds, 0.0, max(vmax, 1e-6), gamma=0.6), pal)
+        out = np.empty((7, pos.shape[0]), dtype=np.float32)
+        out[0:3] = pos.T.astype(np.float32)
+        out[3:6] = col.T
+        out[6] = psize
+        st["out"], st["out_frame"] = out, frame
     scriptOp.clear()
-    scriptOp.copyNumpyArray(np.ascontiguousarray(out), baseName="c")
+    scriptOp.copyNumpyArray(st["out"], baseName="c")
 
 
 setupParameters = onSetupParameters

@@ -245,13 +245,23 @@ Defaults target 60 fps for a single active scene on a modern GPU. Tune the
 | Scene | Default size | ~Solver cost | Notes |
 |-------|-------------|-------------|-------|
 | Ising | 256² | ~2 ms | 512² ≈ 8 ms |
-| N-Body | 600 bodies | ~12 ms | O(N²); 400–700 is the sweet spot |
-| Flow | 20 000 particles | ~13 ms | grid-accelerated curl noise; scales to 40k+ |
-| Soft Body | 6 000 particles | ~2 ms | very cheap |
+| N-Body | 600 bodies | ~12 ms | O(N²); 400–700 is the sweet spot. Softening raised to 0.12/0.15 so mergers stay stable for a whole set |
+| Flow | 20 000 particles | ~9 ms | grid-accelerated curl noise; the field rebuilds every other frame |
+| Soft Body | 6 000 particles | ~2 ms | unconditionally-stable position-based shape matching |
 | LHC / Open Data | — | ~0 ms | only rebuilds geometry during the grow reveal |
+| React-Diff / SDF | GPU | — | feedback / raymarch GLSL TOPs; cost is on the GPU |
+| POP Storm / Bohmian H | GPU / CPU-seeded | — | POPs on the GPU; Bohmian electrons integrated on CPU (~1.8 ms/20k) |
 
-Because only the active scene cooks, running "all six in parallel" is free
-until you turn on `Freerun All` or crossfade between scenes.
+Because only the active scene cooks, running all ten in parallel is free until
+you turn on `Freerun All` or crossfade between scenes.
+
+**The look pipeline.** Each scene gets a *selective* bloom (a brightness
+highpass before the blur, so only bright neon sources glow rather than a hazy
+full-frame smear), then the master GLSL post chain applies beat-driven exposure,
+**ACES filmic tonemapping** (HDR neon rolls off to white instead of clipping
+flat on drops), chromatic aberration, optional kaleidoscope, vignette and
+dithering (to kill 8-bit banding). The raymarched SDF scene adds soft shadows +
+ambient occlusion so the forms read as sculpted, not flat.
 
 ---
 

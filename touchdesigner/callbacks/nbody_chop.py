@@ -87,32 +87,36 @@ def onCook(scriptOp):
     pal = _p(scriptOp, "Palette", "inferno")
 
     sim = st.get("sim")
+    rebuilt = False
     if sim is None or st.get("key") != (initial, n):
         sim = _make(initial, n, G, soft, dt)
         st["sim"] = sim
         st["key"] = (initial, n)
+        rebuilt = True
     sim.G, sim.dt, sim.softening = G, dt, soft
 
+    # Step + assemble the instance array at most ONCE per frame. A Script CHOP
+    # can be cooked several times per frame (viewers, the instancing geo, ...);
+    # the cached output is just re-emitted on those extra cooks.
     frame = absTime.frame
-    if sim.last_frame != frame:
-        for _ in range(substeps):
-            sim.step()
-        sim.last_frame = frame
-
-    pos = sim.positions.astype(np.float32)
-    speeds = sim.speeds()
-    vmax = float(np.percentile(speeds, 92)) if speeds.size else 1.0
-    col = palette.colorize(palette.normalize(speeds, 0.0, max(vmax, 1e-6), gamma=0.6), pal)
-    mass = sim.masses
-    mnorm = palette.normalize(np.cbrt(np.maximum(mass, 0.0)))
-    scale = (psize * (0.6 + 1.4 * mnorm)).astype(np.float32)
-
-    out = np.empty((7, pos.shape[0]), dtype=np.float32)
-    out[0:3] = pos.T
-    out[3:6] = col.T
-    out[6] = scale
+    if rebuilt or st.get("out_frame") != frame:
+        if sim.last_frame != frame:
+            for _ in range(substeps):
+                sim.step()
+            sim.last_frame = frame
+        pos = sim.positions.astype(np.float32)
+        speeds = sim.speeds()
+        vmax = float(np.percentile(speeds, 92)) if speeds.size else 1.0
+        col = palette.colorize(palette.normalize(speeds, 0.0, max(vmax, 1e-6), gamma=0.6), pal)
+        mnorm = palette.normalize(np.cbrt(np.maximum(sim.masses, 0.0)))
+        scale = (psize * (0.6 + 1.4 * mnorm)).astype(np.float32)
+        out = np.empty((7, pos.shape[0]), dtype=np.float32)
+        out[0:3] = pos.T
+        out[3:6] = col.T
+        out[6] = scale
+        st["out"], st["out_frame"] = out, frame
     scriptOp.clear()
-    scriptOp.copyNumpyArray(np.ascontiguousarray(out), baseName="c")
+    scriptOp.copyNumpyArray(st["out"], baseName="c")
 
 
 setupParameters = onSetupParameters

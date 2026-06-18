@@ -76,6 +76,7 @@ def onCook(scriptOp):
     pal = _p(scriptOp, "Palette", "cyber")
 
     sim = st.get("sim")
+    rebuilt = False
     if sim is None or st.get("key") != (mode, n):
         if mode == "softbody":
             sim = ShapeMatchedSoftBody(n=n, spin=spin)
@@ -83,32 +84,30 @@ def onCook(scriptOp):
             sim = CurlNoiseFlow(n=n, freq=scale, speed=speed, evolve=evolve)
         st["sim"] = sim
         st["key"] = (mode, n)
+        rebuilt = True
     # Live-tune the running sim.
     if isinstance(sim, CurlNoiseFlow):
         sim.freq, sim.speed, sim.evolve = scale, speed, evolve
     else:
         sim.spin = spin
 
+    # Step + assemble at most once per frame (the CHOP can cook many times/frame).
     frame = absTime.frame
-    if sim.last_frame != frame:
-        sim.step(1.0 / 60.0)
-        sim.last_frame = frame
-
-    pos = sim.positions.astype(np.float32)
-    if isinstance(sim, ShapeMatchedSoftBody):
-        field = sim.stress()
+    if rebuilt or st.get("out_frame") != frame:
+        if sim.last_frame != frame:
+            sim.step(1.0 / 60.0)
+            sim.last_frame = frame
+        pos = sim.positions.astype(np.float32)
+        field = sim.stress() if isinstance(sim, ShapeMatchedSoftBody) else sim.speeds()
         hi = float(np.percentile(field, 95)) if field.size else 1.0
-    else:
-        field = sim.speeds()
-        hi = float(np.percentile(field, 95)) if field.size else 1.0
-    col = palette.colorize(palette.normalize(field, 0.0, max(hi, 1e-6), gamma=0.7), pal)
-
-    out = np.empty((7, pos.shape[0]), dtype=np.float32)
-    out[0:3] = pos.T
-    out[3:6] = col.T
-    out[6] = psize
+        col = palette.colorize(palette.normalize(field, 0.0, max(hi, 1e-6), gamma=0.7), pal)
+        out = np.empty((7, pos.shape[0]), dtype=np.float32)
+        out[0:3] = pos.T
+        out[3:6] = col.T
+        out[6] = psize
+        st["out"], st["out_frame"] = out, frame
     scriptOp.clear()
-    scriptOp.copyNumpyArray(np.ascontiguousarray(out), baseName="c")
+    scriptOp.copyNumpyArray(st["out"], baseName="c")
 
 
 setupParameters = onSetupParameters

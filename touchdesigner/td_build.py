@@ -667,22 +667,24 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     # A hard cut is just snapping Crossfade; a smooth blend is riding it.
     menu_names = [s[1].replace("build_", "") + str(i) for i, s in enumerate(SCENES)]
     labels = [s[0] for s in SCENES]
-    page = base.appendCustomPage("PhysicsVJ")
-    for parname, deflt in (("Scene", 0), ("Nextscene", 1)):
-        mp = page.appendMenu(parname)[0]
-        mp.menuNames = menu_names
-        mp.menuLabels = labels
-        mp.val = menu_names[deflt]
-    cf = page.appendFloat("Crossfade", label="Crossfade A/B")[0]
-    cf.val = 0.0
+    # Top-level controls. Wrapped so a parameter-API quirk on some TD build
+    # degrades (and is reported) instead of aborting the entire show build.
     try:
+        page = base.appendCustomPage("PhysicsVJ")
+        for parname, deflt in (("Scene", 0), ("Nextscene", 1)):
+            mp = page.appendMenu(parname)[0]
+            mp.menuNames = menu_names
+            mp.menuLabels = labels
+            mp.val = menu_names[deflt]
+        cf = page.appendFloat("Crossfade", label="Crossfade A/B")[0]
+        cf.val = 0.0
         base.par.Crossfade.normMin, base.par.Crossfade.normMax = 0.0, 1.0
         base.par.Crossfade.clampMin = base.par.Crossfade.clampMax = True
-    except Exception:
-        pass
-    page.appendPulse("Cut", label="Cut To B (commit)")
-    page.appendToggle("Freerunall", label="Freerun All (evolve hidden scenes)")
-    _setpar(base, "Freerunall", False)
+        page.appendPulse("Cut", label="Cut To B (commit)")
+        page.appendToggle("Freerunall", label="Freerun All (evolve hidden scenes)")
+        _setpar(base, "Freerunall", False)
+    except Exception as e:
+        print(f"[td_build] top-level control page setup hit a snag: {e}")
 
     # Audio + tempo engines, built first so scenes/shaders can bind to them.
     reactor = build_reactor(dest=base)
