@@ -16,6 +16,19 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOE="${PHYSICSVJ_TOE:-$REPO/physicsvj.toe}"
 
+# Self-update: pull FIRST, and if this script changed, re-exec the new copy so
+# we never run stale launcher logic (the bug that caused the earlier hang).
+if [ "${PHYSICSVJ_NO_PULL:-}" != "1" ] && [ -z "${PHYSICSVJ_REEXEC:-}" ]; then
+  echo "==> git pull"
+  before="$(shasum "$0" 2>/dev/null | awk '{print $1}')"
+  git -C "$REPO" pull --ff-only || echo "(pull skipped/failed; using current files)"
+  after="$(shasum "$0" 2>/dev/null | awk '{print $1}')"
+  if [ -n "$before" ] && [ "$before" != "$after" ]; then
+    echo "==> run_td.sh changed in the pull; re-running the updated version"
+    PHYSICSVJ_REEXEC=1 exec "$0" "$@"
+  fi
+fi
+
 # Locate the TouchDesigner binary (macOS default; allow override).
 TD="${TOUCHDESIGNER_APP:-}"
 if [ -z "$TD" ]; then
@@ -29,11 +42,6 @@ if [ -z "$TD" ] || [ ! -x "$TD" ]; then
   echo "Could not find the TouchDesigner binary. Set TOUCHDESIGNER_APP to it, e.g.:"
   echo "  export TOUCHDESIGNER_APP=/Applications/TouchDesigner.app/Contents/MacOS/TouchDesigner"
   exit 1
-fi
-
-if [ "${PHYSICSVJ_NO_PULL:-}" != "1" ]; then
-  echo "==> git pull"
-  git -C "$REPO" pull --ff-only || echo "(pull skipped/failed; using current files)"
 fi
 
 if [ ! -f "$TOE" ]; then
