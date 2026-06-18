@@ -62,7 +62,15 @@ def onPulse(par):
 
 def _build(scriptOp, tracks, scale):
     scriptOp.clear()
-    scriptOp.pointAttribs.create("Cd", (0.0, 0.0, 0.0))
+    # Cd is a standard attribute in TD 2025+ (no default allowed); older builds
+    # require a default. Try both, then fall back to it already existing.
+    try:
+        scriptOp.pointAttribs.create("Cd", (0.0, 0.0, 0.0))
+    except Exception:
+        try:
+            scriptOp.pointAttribs.create("Cd")
+        except Exception:
+            pass
     for tr in tracks:
         pts = tr.points
         m = len(pts)

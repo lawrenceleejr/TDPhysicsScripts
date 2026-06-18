@@ -35,6 +35,14 @@ if REPO not in sys.path:
 
 _CALLBACK_DIR = os.path.join(REPO, "touchdesigner", "callbacks")
 
+# ``ParMode`` is a TouchDesigner enum. It is injected as a global in DAT scripts
+# but NOT into imported modules, so we must import it from the ``td`` module.
+# (Outside TD -- e.g. the test suite -- this stays None and is never used.)
+try:
+    from td import ParMode  # noqa: F401
+except Exception:
+    ParMode = None
+
 # Stable scene table used by build_all (label, builder, kwargs).
 SCENES = [
     ("Ising", "build_ising", {}),

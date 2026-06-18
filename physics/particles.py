@@ -255,6 +255,8 @@ class ShapeMatchedSoftBody:
     def _best_fit_rotation(self, p: np.ndarray) -> np.ndarray:
         # Cross-covariance between current (centered) and rest positions.
         A = p.T @ self.q0  # (3, 3)
+        if not np.isfinite(A).all():
+            return np.eye(3)
         U, _, Vt = np.linalg.svd(A)
         R = U @ Vt
         if np.linalg.det(R) < 0:  # guard against reflection
@@ -277,12 +279,22 @@ class ShapeMatchedSoftBody:
         # Nudge the orientation forward each step to keep a steady spin.
         R_step = _rotation_matrix(self.axis, self.spin * dt)
         goal = (self.q0 @ R.T) @ R_step.T + cm
-        # Shape-matching restoring velocity.
-        self.vel += self.stiffness * (goal - self.pos) / dt
-        self.vel *= (1.0 - self.damping)
-        # A little curl-ish wobble so the surface ripples.
+        # Position-based shape matching (Mueller et al.): move a fraction of the
+        # way to the matched goal each step. This is unconditionally stable for
+        # stiffness in [0, 1] -- the explicit-Euler spring it replaced
+        # accumulated velocity and blew up to inf over a long run.
+        prev = self.pos
+        alpha = min(max(self.stiffness, 0.0), 1.0)
+        new = self.pos + alpha * (goal - self.pos)
+        # A little curl-ish wobble so the surface ripples (bounded, per-step).
         if self.wobble > 0.0:
             jitter = self._noise.noise(self.pos * 0.5 + self.t * 0.3)
             norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
-            self.vel += self.wobble * jitter[:, None] * (p / norm)
-        self.pos += self.vel * dt
+            new = new + (self.wobble * dt) * jitter[:, None] * (p / norm)
+        # Derived velocity (for speeds()/colour), with damping.
+        self.vel = (1.0 - self.damping) * (new - prev) / dt
+        self.pos = new
+        # Safety net: never let non-finite state propagate.
+        if not np.isfinite(self.pos).all():
+            self.pos = self.rest.copy()
+            self.vel = np.zeros_like(self.vel)
