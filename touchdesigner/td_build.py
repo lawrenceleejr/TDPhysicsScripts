@@ -43,6 +43,7 @@ SCENES = [
     ("Soft Body", "build_particles", {"mode": "softbody", "name": "softbody", "palette": "synth"}),
     ("LHC Tracks", "build_lhc", {}),
     ("Open Data", "build_opendata", {}),
+    ("Feynman", "build_feynman", {}),
 ]
 
 
@@ -467,6 +468,65 @@ def build_lhc(dest=None, name="lhc"):
     except Exception:
         pass
     print(f"[td_build] built LHC Tracks -> {c.path}")
+    return c
+
+
+def build_feynman(dest=None, name="feynman"):
+    """The Feynman field: static linework, animated by point colour.
+
+    The one scene here whose geometry does not move. The field is built once
+    by the Script SOP; the Script CHOP puts out one colour and alpha per point
+    each frame and a CHOP to SOP lands them on the geometry, which is what
+    keeps twelve thousand points at frame rate. If a TouchDesigner version
+    names the CHOP to SOP's scope parameters differently and the field comes
+    out flat white, docs/ARCHITECTURE.md says which two to set by hand.
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    geo = _create(c, "geometryCOMP", "geo", -260, 0)
+    for child in list(geo.children):
+        try:
+            child.destroy()
+        except Exception:
+            pass
+
+    lines = geo.create("scriptSOP", "lines")
+    _install_callbacks(lines, "feynman_sop.py")
+
+    state = _create(c, "scriptCHOP", "state", -560, -180)
+    _install_callbacks(state, "feynman_chop.py")
+    _setpar(state, "Geosop", "geo/lines")   # relative to the scene, from a CHOP
+
+    # The colours land on the points here. Channel scope takes the CHOP's four
+    # channels in order, attribute scope spends them on Cd.
+    paint = geo.create("choptoSOP", "paint")
+    _connect(lines, paint)
+    _setpar(paint, "chop", "../state")
+    for par, val in (("chanscope", "*"), ("attscope", "Cd"),
+                     ("attribscope", "Cd"), ("method", "points"),
+                     ("sopattrib", "Cd")):
+        _setpar(paint, par, val)
+    try:
+        paint.render = True
+        paint.display = True
+        lines.render = False
+        lines.display = False
+    except Exception:
+        pass
+
+    _line_geo(c, paint, "geo", -260, 0)
+    _orbit(c, geo, default=0.0)          # the field is flat: no spin by default
+    cam = _camera(c, dist=11.0, tilt=0.0)
+    r = _render(c, geo, cam, None)
+    tr = _trails(c, r, amount=0.0)
+    _glow(c, tr, size=10.0, x=640)
+    _cook_driver(c, state)               # the CHOP is what has to cook per frame
+    try:
+        lines.cook(force=True)
+        state.cook(force=True)
+    except Exception:
+        pass
+    print(f"[td_build] built Feynman -> {c.path}")
     return c
 
 

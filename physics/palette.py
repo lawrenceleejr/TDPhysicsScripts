@@ -53,6 +53,17 @@ PALETTES: dict[str, list[tuple[float, tuple[float, float, float]]]] = {
         (0.85, (1.000, 0.200, 0.900)),
         (1.00, (1.000, 0.900, 1.000)),
     ],
+    # The USMCC identity, read as a ramp so the same tone dial that drives
+    # every other scene drives this one: near-black paper, through vermillion,
+    # to the cream the linework is drawn in. The three sample points
+    # physics/feynman.py reads land on vermillion, bone and cream.
+    "sigma": [
+        (0.00, (0.078, 0.075, 0.071)),
+        (0.28, (0.478, 0.153, 0.075)),
+        (0.48, (1.000, 0.322, 0.188)),
+        (0.72, (0.608, 0.580, 0.541)),
+        (1.00, (0.937, 0.914, 0.855)),
+    ],
     "acid": [  # black -> deep green -> lime -> pale yellow
         (0.00, (0.000, 0.020, 0.000)),
         (0.40, (0.000, 0.300, 0.100)),
@@ -70,7 +81,8 @@ PALETTES: dict[str, list[tuple[float, tuple[float, float, float]]]] = {
 DEFAULT_PALETTE = "inferno"
 
 # Stable ordering used by menu-style parameters in TouchDesigner.
-PALETTE_NAMES = ["inferno", "magma", "plasma", "cyber", "synth", "acid", "ice"]
+PALETTE_NAMES = ["inferno", "magma", "plasma", "cyber", "synth", "acid", "ice",
+                 "sigma"]
 
 
 def _control_points(name: str):

@@ -4,7 +4,7 @@ A library of **live physics simulations for [TouchDesigner](https://derivative.c
 built for VJ / DJ sets. Everything is dark-background, neon, glowing, and
 designed so you can **pre-build every scene and flip between them instantly**.
 
-Six scenes, spanning physics:
+Seven scenes, spanning physics:
 
 | # | Scene | What it is |
 |---|-------|-----------|
@@ -14,6 +14,7 @@ Six scenes, spanning physics:
 | 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly. |
 | 4 | **LHC Tracks** | Synthetic collider events: charged tracks spiralling in a magnetic field, colour-coded by momentum, re-firing every few seconds. |
 | 5 | **Open Data** | **Real CMS dimuon open data** — each event drawn as two muon tracks, coloured by invariant mass (you're literally rendering the J/ψ, Υ and Z). |
+| 6 | **Feynman** | A field of Feynman diagram lines — fermions, bosons and Higgs, every vertex a legal Standard Model interaction — with a front travelling through it, drawing each line out of the vertex it reaches and letting the wake fade. |
 
 ---
 
@@ -53,13 +54,23 @@ install needed to *use* these scripts).
    ```bash
    git clone <this-repo> TDPhysicsScripts
    ```
-2. *(Optional)* **Download real LHC data** for the Open Data scene:
+2. *(Optional)* **Export more Feynman fields** — six ship with the repo, and
+   the generator behind the poster they come from is included:
+   ```bash
+   node data/feynman/export_field.mjs --w 2560 --h 1080 --seed 3
+   ```
+   It refuses to write a field with an illegal vertex in it. To look at one
+   without opening TouchDesigner:
+   ```bash
+   python3 data/feynman/preview.py --frames 6 --every 75
+   ```
+3. *(Optional)* **Download real LHC data** for the Open Data scene:
    ```bash
    python3 data/fetch_opendata.py
    ```
    If you skip this, the scene uses the bundled synthetic sample (which still
    shows the J/ψ, Υ and Z peaks).
-3. **In TouchDesigner**, create a **Text DAT** and paste:
+4. **In TouchDesigner**, create a **Text DAT** and paste:
    ```python
    import sys
    sys.path.insert(0, r"/full/path/to/TDPhysicsScripts")   # <-- edit this
@@ -67,7 +78,7 @@ install needed to *use* these scripts).
    td_build.build_all(op('/'))
    ```
    Right-click the DAT → **Run**. A `PhysicsVJ` component appears.
-4. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
+5. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
    mode), and change the **`Scene`** parameter to switch visuals — or set
    **`Nextscene`** and ride **`Crossfade`** to blend between two.
 
@@ -101,6 +112,14 @@ cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 **LHC Tracks** — `B Field (T)`, `Seconds/Event`, `Grow Time`, `World Scale`,
 `Palette`, `New Collision`.
 
+**Feynman** — two pages, because the geometry and the animation are separate
+operators. On `geo/lines`: `Field` (six shipped fields — three 16:9, plus 21:9,
+9:16 and square), `World Width`, `Vertex Marks`, `Rebuild`. On `state`:
+`Line Lifetime` (the dial that matters — how long a line stays lit, as a share
+of one traverse; 0.3 keeps the pattern turning over, 1.0 fills the frame and
+holds it), `Seconds / Traverse`, `Fade Share`, `Fronts`, `Palette`, `Hold Lit`
+(light everything and freeze, for a still), `New Fronts`.
+
 **Open Data** — `Seconds/Event`, `Grow Time`, `World Scale`, `Event Order`
 (by mass / random / sequential), `Palette`, `Next Event`. It also gets a
 built-in **invariant-mass HUD**: a translucent log-scale histogram of the whole
@@ -121,7 +140,8 @@ actually contribute to the mix cook (so it's a single live sim except
 mid-fade). Each scene also has an `Orbit` (deg/sec) camera-spin control.
 
 Palettes: `inferno`, `magma`, `plasma`, `cyber`, `synth`, `acid`, `ice` — all
-tuned to glow on black.
+tuned to glow on black — plus `sigma`, the USMCC identity (cream linework,
+vermillion scalars) that the Feynman field ships in.
 
 ---
 
@@ -138,8 +158,9 @@ Defaults target 60 fps for a single active scene on a modern GPU. Tune the
 | Flow | 20 000 particles | ~13 ms | grid-accelerated curl noise; scales to 40k+ |
 | Soft Body | 6 000 particles | ~2 ms | very cheap |
 | LHC / Open Data | — | ~0 ms | only rebuilds geometry during the grow reveal |
+| Feynman | 615 lines / 12.5k points | ~1 ms | geometry built once; per frame is one numpy pass over the points |
 
-Because only the active scene cooks, running "all six in parallel" is free
+Because only the active scene cooks, running "all seven in parallel" is free
 until you turn on `Freerun All` or crossfade between scenes.
 
 ---
@@ -165,6 +186,7 @@ physics/            numpy simulation cores (no TouchDesigner dependency)
   particles.py      curl-noise flow + shape-matched soft body + Perlin noise
   lhc_tracks.py     helical charged-track generator
   opendata.py       CMS dimuon loader + synthetic generator + event show
+  feynman.py        Feynman field loader + travelling flood + point colours
   palette.py        neon colormaps (glow-on-black)
 touchdesigner/
   td_build.py       run inside TD to assemble scenes
@@ -173,6 +195,9 @@ touchdesigner/
 data/
   dimuon_sample.csv bundled synthetic dimuon data (offline fallback)
   fetch_opendata.py downloads the real CMS dataset
+  feynman/          exported Feynman fields, the generator that makes them
+                    (export_field.mjs + network.js) and preview.py, which
+                    renders a field to PNG without opening TouchDesigner
 tests/              numpy test suite + static checks of the TD layer
 docs/ARCHITECTURE.md  deeper design notes + manual wiring fallback
 ```

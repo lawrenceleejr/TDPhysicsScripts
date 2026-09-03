@@ -20,6 +20,11 @@ from physics.lhc_tracks import LHCEventGenerator, helix_track, DEFAULT_B
 from physics.opendata import (
     generate_synthetic_dimuon, _invariant_mass, DimuonShow, RESONANCES,
 )
+from physics.feynman import Field, FeynmanShow, LEGAL_VERTICES
+
+_FIELDS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "feynman")
+_SHIPPED = ["16x9", "16x9-b", "16x9-c", "21x9", "9x16", "1x1"]
 
 
 # --- palette ------------------------------------------------------------
@@ -254,3 +259,97 @@ def test_dimuon_show_builds_two_tracks():
     assert show.current_mass > 0
     grown = show.grow(0.3)
     assert len(grown) == 2
+
+
+# --- the Feynman field --------------------------------------------------
+@pytest.mark.parametrize("name", _SHIPPED)
+def test_field_loads_and_every_vertex_is_legal(name):
+    """The exporter audits before writing; this audits after reading.
+
+    A field with an illegal vertex in it is the one defect that would show as
+    physics nonsense on a wall rather than as a glitch, so it is checked at
+    both ends of the pipe.
+    """
+    f = Field(os.path.join(_FIELDS, "%s.json" % name))
+    assert f.n_edges > 100
+    assert len(f.verts) > 50
+    assert f.illegal_vertices() == []
+    legs = f.vertex_legs()
+    interactions = [v for v in legs if len(v) > 2 or (len(v) == 2 and v[0] != v[1])]
+    assert interactions, "a field with no interactions in it is not a field"
+    assert all(v in LEGAL_VERTICES for v in interactions)
+
+
+def test_geometry_and_colour_arrays_line_up():
+    """The contract the Script SOP and the Script CHOP meet on.
+
+    The SOP appends these polylines in this order; the CHOP puts out one
+    sample per point in the same order. If the two ever disagree the colours
+    land on the wrong lines, so the count is asserted rather than assumed.
+    """
+    show = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), seed=3)
+    assert sum(len(p) for p in show.polys) == show.n_points
+    c = show.colours()
+    assert c.shape == (show.n_points, 4)
+    assert c.dtype == np.float32
+    assert show.n_line_points == sum(len(p) for p in show.field.polys)
+
+
+def test_marks_toggle_changes_only_the_marks():
+    on = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), marks=True, seed=3)
+    off = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), marks=False, seed=3)
+    assert off.n_points == off.n_line_points == on.n_line_points
+    assert on.n_points > off.n_points
+
+
+def test_lines_grow_out_of_one_end_and_only_forward():
+    """A line draws itself out of the vertex the front reached, monotonically.
+
+    Growth is carried by alpha, so a line that grew backwards or flickered
+    would show up here as an alpha prefix that shrinks.
+    """
+    show = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), walkers=1,
+                       tail=0.9, traverse=20.0, seed=11)
+    fl = show.flood
+    seen = {}
+    shrank = 0
+    for _ in range(400):
+        show.step(1 / 30)
+        for i in (7, 40, 123, 300, 500):
+            g = float(fl.grow[i])
+            if g <= 0:
+                continue
+            if i in seen and g + 1e-6 < seen[i] and fl.tone[i] > 0.99:
+                shrank += 1
+            seen[i] = max(g, seen.get(i, 0.0))
+    assert shrank == 0
+    assert len(seen) == 5, "the flood never reached some of the sampled lines"
+
+
+def test_a_short_lifetime_keeps_the_pattern_turning_over():
+    """The dial that decides whether the field evolves or just fills up.
+
+    With a long tail almost everything alight now was alight ten seconds ago;
+    with a short one most of it is new. Both are useful live, and this is what
+    separates them.
+    """
+    def churn(tail, walkers):
+        show = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), walkers=walkers,
+                           tail=tail, traverse=30.0, fade=0.5, seed=4)
+        seen, new, tot, low = None, 0, 0, 1.0
+        for k in range(1800):                      # a minute at 30 fps
+            show.step(1 / 30)
+            if k % 300 == 0:                       # every ten seconds
+                lit = show.flood.tone > 0.5
+                low = min(low, float(lit.mean()))
+                if seen is not None and lit.any():
+                    new += int((lit & ~seen).sum())
+                    tot += int(lit.sum())
+                seen = lit
+        return (new / tot if tot else 0.0), low
+
+    fresh_short, floor_short = churn(0.3, 3)
+    fresh_long, _ = churn(1.0, 3)
+    assert fresh_short > 0.5, "a short lifetime should keep turning the field over"
+    assert fresh_long < fresh_short, "a long lifetime should hold the field still"
+    assert floor_short > 0.0, "three fronts should never leave the field empty"

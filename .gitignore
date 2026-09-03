@@ -13,3 +13,6 @@ venv/
 *.toe.*
 Backup/
 *.tox.bak
+
+# Preview / contact-sheet renders
+/out/
