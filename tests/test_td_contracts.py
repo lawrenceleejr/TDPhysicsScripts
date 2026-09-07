@@ -459,3 +459,16 @@ def test_every_explicit_resolution_sets_custom_mode():
     assert "_connect(src, fb, 0)" in trails and "_set_res(fb)" in trails
     # every composite is pinned rather than inheriting from its smallest input
     assert src.count('"compositeTOP"') == src.count("_set_res(comp)") + src.count("_set_res(label)") + src.count("_set_res(over)")
+
+
+def test_master_chain_has_an_fx_bypass_and_is_cooked_at_build():
+    """A post shader that fails to compile must not black out the show, and a
+    headless build must surface such a failure in the report (nothing else
+    pulls the master chain there)."""
+    src = _src("touchdesigner", "td_build.py")
+    assert 'appendToggle("Fx"' in src
+    assert '"0 if parent().par.Fx.eval() else 1"' in src
+    build_all = src[src.index("def build_all("):src.index("# =====")]
+    assert "for o in (cross, mixed, post, final):" in build_all
+    # Par objects are compared by value, never as objects
+    assert "par.Crossfade < 1" not in src and "par.Crossfade > 0" not in src

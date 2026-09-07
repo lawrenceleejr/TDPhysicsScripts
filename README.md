@@ -228,7 +228,9 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
   chromatic aberration, optional kaleidoscope, scanline shimmer, vignette) are
   all GLSL TOPs. Shader source lives in `touchdesigner/shaders/` — readable,
   hot-swappable `.frag`/`.vert` files, not buried in nodes.
-- **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`.
+- **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`, and a
+  **`Post FX`** toggle — off routes the raw scene mix straight to `out`, so a
+  shader problem on a new TouchDesigner build can never black out a show.
 - **POP Storm.** Scene 8 uses TouchDesigner's **POP** family (GPU-resident 3D
   operators) for very large, organic, force-driven particle counts, rim-lit by
   a compiled glow material (`glow_mat.vert`/`.pixel`) under a 3-point light rig.

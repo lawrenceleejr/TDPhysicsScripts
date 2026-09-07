@@ -932,6 +932,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     fxpage.appendFloat("Rgbshift", label="RGB Shift (px)")[0].val = 1.5
     fxpage.appendFloat("Punch", label="Beat Punch")[0].val = 1.0
     fxpage.appendToggle("Wavevis", label="Waveform Overlay")[0].val = False
+    fxpage.appendToggle("Fx", label="Post FX (off = raw mix)")[0].val = True
     for pn, mx in (("Kaleido", 1.0), ("Rgbshift", 8.0), ("Punch", 2.0)):
         try:
             getattr(base.par, pn).normMin = 0.0
@@ -965,9 +966,9 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         # or when Freerun All is on. Keeps it to one live sim except mid-fade.
         _expr(
             scene, "Active",
-            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade < 1) "
-            f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade > 0) "
-            f"or parent().par.Freerunall)",
+            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade.eval() < 1) "
+            f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade.eval() > 0) "
+            f"or parent().par.Freerunall.eval())",
         )
         out = scene.op("out")
         if out is not None:
@@ -986,10 +987,10 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     # cooks that node once per frame, so the idle deck is free. The scenes'
     # Active flags below use the same rule, so sim and render agree.
     _expr(switch_a, "index",
-          "parent().par.Scene.menuIndex if parent().par.Crossfade < 1 "
+          "parent().par.Scene.menuIndex if parent().par.Crossfade.eval() < 1 "
           "else parent().par.Nextscene.menuIndex")
     _expr(switch_b, "index",
-          "parent().par.Nextscene.menuIndex if parent().par.Crossfade > 0 "
+          "parent().par.Nextscene.menuIndex if parent().par.Crossfade.eval() > 0 "
           "else parent().par.Scene.menuIndex")
 
     cross = _create(base, "crossTOP", "crossfade", 160, 0)
@@ -1001,12 +1002,41 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     mixed = _waveform_overlay(base, cross, reactor, x=300)
     post = _post_fx(base, mixed, reactor, tempo, x=480)
 
-    final = _create(base, "nullTOP", "out", 700, 0)
-    _connect(post, final)
+    # A live show must never go black because a post shader failed to compile
+    # on some build: 'Fx' off routes the raw mix straight to 'out'.
+    bypass = _create(base, "switchTOP", "fx_bypass", 600, 0)
+    _connect(post, bypass, 0)
+    _connect(mixed, bypass, 1)
+    _expr(bypass, "index", "0 if parent().par.Fx.eval() else 1")
+
+    final = _create(base, "nullTOP", "out", 760, 0)
+    _connect(bypass, final)
+    _set_res(final)
     try:
         final.viewer = True
     except Exception:
         pass
+
+    # Pull the master chain once now. Nothing else does during a headless
+    # build, so without this a GLSL compile failure in post/overlay would
+    # never reach build_report.txt -- it would just be a black 'out' later.
+    for o in (cross, mixed, post, final):
+        try:
+            o.cook(force=True)
+        except Exception as e:
+            print(f"[td_build] cook of {o.path} raised: {e}")
+    for o in (switch_a, switch_b, cross, mixed, post, bypass, final):
+        try:
+            err = o.errors()
+            if err:
+                print(f"[td_build] {o.path}: {err.strip()}")
+        except Exception:
+            pass
+    try:
+        print(f"[td_build] master chain: deck_a -> {switch_a.inputs[int(switch_a.par.index.eval())].path}, "
+              f"out is {final.width}x{final.height}")
+    except Exception as e:
+        print(f"[td_build] master chain check failed: {e}")
 
     # Make the whole show breathe: bind scene params to the audio + tempo.
     _reactive_bindings(base, reactor, tempo)
