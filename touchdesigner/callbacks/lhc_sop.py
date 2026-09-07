@@ -108,7 +108,10 @@ def onCook(scriptOp):
     frac = 1.0 if grow_time <= 0 else min(elapsed / grow_time, 1.0)
 
     # Only rebuild geometry while the tracks are still growing (or first time).
-    quant = round(frac, 2)
+    # Quantise the reveal to whole points: tracks have n_points samples, so
+    # rebuilding more often than that re-appends identical geometry (the old
+    # 1%-of-frac step did about a third more rebuilds than could show).
+    quant = int(frac * gen.n_points)
     if st.get("last_built") == quant:
         return
     st["last_built"] = quant

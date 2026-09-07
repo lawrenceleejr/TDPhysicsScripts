@@ -89,3 +89,42 @@ def test_presets_build_and_evaluate():
         st = HydrogenState.preset(name)
         assert np.isfinite(st.density(pos)).all()
         assert np.isfinite(st.bohm_velocity(pos)).all()
+
+
+def test_analytic_velocity_matches_finite_differences():
+    """The analytic gradient is what runs live; the finite-difference stencil
+    it replaced is kept as bohm_velocity_fd to pin it down. Agreement is to
+    ~1e-9 wherever |psi|^2 is not vanishing (the stencil itself is noise there)."""
+    rng = np.random.default_rng(7)
+    pts = rng.normal(size=(1500, 3)) * 4.0
+    for name in PRESET_NAMES:
+        st = HydrogenState.preset(name)
+        for t in (0.0, 2.7):
+            va = st.bohm_velocity(pts, t)
+            vf = st.bohm_velocity_fd(pts, t)
+            assert np.isfinite(va).all(), name
+            good = st.density(pts, t) > 1e-8
+            scale = max(float(np.abs(vf[good]).max()), 1.0)
+            assert np.abs(va - vf)[good].max() / scale < 1e-6, (name, t)
+
+
+def test_fast_psi_matches_the_textbook_product():
+    """HydrogenState.psi avoids arccos/arctan2/complex exp; it must equal the
+    plain R_nl * Y_lm product (psi_nlm) for every preset, including m < 0."""
+    rng = np.random.default_rng(3)
+    pts = rng.normal(size=(800, 3)) * 5.0
+    states = [HydrogenState.preset(n) for n in PRESET_NAMES]
+    states.append(HydrogenState([(0.6, 3, 2, -2), (0.8j, 3, 2, -1), (0.3, 4, 3, 3)]))
+    for st in states:
+        for t in (0.0, 1.9):
+            ref = sum(c * psi_nlm(n, l, m, pts) * np.exp(-1j * (-0.5 / (n * n)) * t)
+                      for c, n, l, m in st.terms)
+            got = st.psi(pts, t)
+            assert np.abs(got - ref).max() < 1e-12 * max(np.abs(ref).max(), 1e-30)
+
+
+def test_velocity_is_finite_on_the_axis_and_at_the_origin():
+    pts = np.array([[0.0, 0.0, 2.0], [0.0, 0.0, -3.0], [0.0, 0.0, 0.0], [1e-14, 0.0, 1.0]])
+    for name in PRESET_NAMES:
+        v = HydrogenState.preset(name).bohm_velocity(pts)
+        assert np.isfinite(v).all(), name

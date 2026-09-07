@@ -384,3 +384,57 @@ def test_a_short_lifetime_keeps_the_pattern_turning_over():
     assert fresh_short > 0.5, "a short lifetime should keep turning the field over"
     assert fresh_long < fresh_short, "a long lifetime should hold the field still"
     assert floor_short > 0.0, "three fronts should never leave the field empty"
+
+
+def test_nbody_gram_forces_match_the_direct_pair_sum():
+    """The live kernel forms pair distances from the Gram matrix and sums
+    forces with a matmul. Check it against the explicit (N, N, 3) difference
+    formulation it replaced, for every initial-condition family."""
+    def direct(sim):
+        diff = sim.pos[None, :, :] - sim.pos[:, None, :]
+        r2 = np.einsum("ijk,ijk->ij", diff, diff) + sim.softening ** 2
+        inv_r3 = 1.0 / (r2 * np.sqrt(r2))
+        np.fill_diagonal(inv_r3, 0.0)
+        return sim.G * np.einsum("ij,ijk->ik", inv_r3 * sim.mass[None, :], diff)
+
+    for ctor in (NBodySim.two_galaxies, NBodySim.rotating_disk, NBodySim.plummer_sphere):
+        sim = ctor(n=150, seed=9, softening=0.05)
+        a, b = sim._accelerations(), direct(sim)
+        assert np.abs(a - b).max() < 1e-10 * np.abs(b).max()
+
+
+def test_ising_lut_matches_the_general_metropolis_rule():
+    """With no external field the acceptance probability is a 9-entry table;
+    it must reproduce exp(-dE/T) for every (spin, neighbour-sum) combination,
+    and a non-zero field must still take the general path."""
+    m = IsingModel(size=16, temperature=1.7, seed=2)
+    nbr = m._neighbour_sum()
+    lut = m._accept_lut()[m.spins * nbr + 4]
+    general = np.exp(np.minimum(-(2.0 * m.spins * (m.coupling * nbr)) / m.temperature, 0.0))
+    assert np.abs(lut - general).max() < 1e-6
+    # temperature change refreshes the table
+    m.temperature = 0.9
+    assert m._accept_lut()[0] < lut.min() + 1e-9 or m._lut_key[0] == 0.9
+    with_field = IsingModel(size=16, temperature=1.7, field=0.3, seed=2)
+    with_field.step(3)  # exercises the general branch
+    assert set(np.unique(with_field.spins)).issubset({-1, 1})
+
+
+def test_curl_flow_interpolation_matches_three_index_gather():
+    """velocity_at fetches trilinear corners with 1-D take on a flat field;
+    it must agree exactly with the straightforward three-index gather."""
+    f = CurlNoiseFlow(n=3000, seed=1)
+    pos = f.pos
+    R = f.grid_res
+    g = np.clip((pos + f.bounds) / (2 * f.bounds) * (R - 1), 0, R - 1 - 1e-4)
+    i = np.floor(g).astype(np.int32)
+    fr = g - i
+    ix, iy, iz = i[:, 0], i[:, 1], i[:, 2]
+    fx, fy, fz = fr[:, 0:1], fr[:, 1:2], fr[:, 2:3]
+    fld = f.field
+    c00 = fld[ix, iy, iz] * (1 - fx) + fld[ix + 1, iy, iz] * fx
+    c10 = fld[ix, iy + 1, iz] * (1 - fx) + fld[ix + 1, iy + 1, iz] * fx
+    c01 = fld[ix, iy, iz + 1] * (1 - fx) + fld[ix + 1, iy, iz + 1] * fx
+    c11 = fld[ix, iy + 1, iz + 1] * (1 - fx) + fld[ix + 1, iy + 1, iz + 1] * fx
+    ref = (c00 * (1 - fy) + c10 * fy) * (1 - fz) + (c01 * (1 - fy) + c11 * fy) * fz
+    assert np.array_equal(f.velocity_at(pos), ref)

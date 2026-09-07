@@ -78,12 +78,21 @@ def onCook(scriptOp):
         sim.step(sweeps)
         sim.last_frame = frame
 
-    rgb = palette.colorize(sim.field01(), pal)            # (H, W, 3) float32
-    if wall_glow > 0.0:
-        rgb = rgb + wall_glow * sim.domain_walls()[..., None]  # glowing edges
-    rgb = np.ascontiguousarray(np.clip(rgb, 0.0, 1.0), dtype=np.float32)
+    # Spins are binary, so the colour map is a two-entry table, not an interp
+    # over the whole lattice; the image is filled one channel at a time with
+    # broadcast scalars, which is the cheapest way numpy writes an (H, W, 3).
+    lo, hi = palette.colorize(np.array([0.0, 1.0], dtype=np.float32), pal)
+    up = (sim.spins > 0).astype(np.float32)               # 1 where spin is +1
+    rgb = np.empty(sim.spins.shape + (3,), dtype=np.float32)
+    walls = sim.domain_walls() * wall_glow if wall_glow > 0.0 else None
+    for c in range(3):
+        ch = rgb[..., c]
+        np.multiply(up, float(hi[c] - lo[c]), out=ch)
+        ch += float(lo[c])
+        if walls is not None:
+            ch += walls                                    # glowing edges
+    np.clip(rgb, 0.0, 1.0, out=rgb)
     scriptOp.copyNumpyArray(rgb)
-
 
 # Backwards-compat aliases for older TouchDesigner callback names.
 setupParameters = onSetupParameters

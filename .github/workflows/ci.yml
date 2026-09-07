@@ -1,0 +1,29 @@
+name: tests
+
+# The numpy cores and the static checks of the TouchDesigner layer run on every
+# push and pull request. TouchDesigner itself cannot run here (no GPU, no
+# licence), so this is the "does the maths still hold and does every callback
+# still parse and agree with the builder" gate; ./tools/run_td.sh --check is
+# the in-app gate you run on the show machine.
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the Python inside TouchDesigner 2022; 3.11 is 2023 and later.
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: shell syntax
+        run: bash -n tools/run_td.sh

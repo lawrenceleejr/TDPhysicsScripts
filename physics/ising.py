@@ -40,6 +40,8 @@ class IsingModel:
         ii, jj = np.indices((self.size, self.size))
         parity = (ii + jj) & 1
         self._masks = (parity == 0, parity == 1)
+        self._lut = None
+        self._lut_key = None
         # Bookkeeping for frame-rate-independent stepping by the host.
         self.last_frame = -1
 
@@ -55,16 +57,37 @@ class IsingModel:
             + np.roll(s, -1, axis=1)
         )
 
+    def _accept_lut(self) -> np.ndarray:
+        """Acceptance probability for every possible flip, indexed by s*nbr + 4.
+
+        With no external field the flip cost is ``dE = 2 J s nbr`` and
+        ``s * nbr`` takes only the nine values -4..4, so the Metropolis
+        ``exp(-dE/T)`` is a nine-entry table instead of an exp() over the whole
+        lattice every half-sweep. Rebuilt only when T or J change.
+        """
+        T = max(self.temperature, 1e-6)
+        key = (T, self.coupling)
+        if self._lut_key != key:
+            k = np.arange(-4, 5, dtype=np.float64)
+            dE = 2.0 * self.coupling * k
+            self._lut = np.exp(np.minimum(-dE / T, 0.0)).astype(np.float32)
+            self._lut_key = key
+        return self._lut
+
     def _update_color(self, mask: np.ndarray) -> None:
         nbr = self._neighbour_sum()
-        # Energy cost of flipping each spin: dE = 2 s (J * sum_nbr + h).
-        dE = 2.0 * self.spins * (self.coupling * nbr + self.field)
-        T = max(self.temperature, 1e-6)
-        # Acceptance probability; dE <= 0 gives prob >= 1 (always accept). Clamp
-        # the exponent at 0 so exp() never overflows to inf at very low T (the
-        # accept decision is identical, but it stops a per-frame overflow warn).
-        accept_prob = np.exp(np.minimum(-dE / T, 0.0))
-        rand = self._rng.random(self.spins.shape)
+        if self.field == 0.0:
+            # Fast path: table lookup on the int8 product (see _accept_lut).
+            idx = self.spins * nbr            # int8, in [-4, 4]
+            idx += 4
+            accept_prob = self._accept_lut()[idx]
+        else:
+            # Energy cost of flipping each spin: dE = 2 s (J * sum_nbr + h).
+            dE = 2.0 * self.spins * (self.coupling * nbr + self.field)
+            T = max(self.temperature, 1e-6)
+            # Clamp the exponent at 0 so exp() never overflows at very low T.
+            accept_prob = np.exp(np.minimum(-dE / T, 0.0))
+        rand = self._rng.random(self.spins.shape, dtype=np.float32)
         flip = mask & (rand < accept_prob)
         self.spins[flip] = -self.spins[flip]
 
@@ -95,16 +118,12 @@ class IsingModel:
         """Fraction of disagreeing neighbours per site, in [0, 1] (H, W).
 
         High where spins differ from neighbours -> traces the glowing
-        boundaries between magnetic domains.
+        boundaries between magnetic domains. A site agreeing with ``k`` of its
+        four neighbours has ``s * nbr = 2k - 4``, so the disagreeing fraction
+        is ``(4 - s * nbr) / 8`` -- one int8 pass instead of four comparisons.
         """
-        s = self.spins
-        diff = (
-            (s != np.roll(s, 1, axis=0)).astype(np.float32)
-            + (s != np.roll(s, -1, axis=0)).astype(np.float32)
-            + (s != np.roll(s, 1, axis=1)).astype(np.float32)
-            + (s != np.roll(s, -1, axis=1)).astype(np.float32)
-        )
-        return diff * 0.25
+        agree = self.spins * self._neighbour_sum()          # int8 in [-4, 4]
+        return (4 - agree.astype(np.float32)) * 0.125
 
     def reset(self, temperature: float | None = None, seed: int | None = None) -> None:
         if temperature is not None:

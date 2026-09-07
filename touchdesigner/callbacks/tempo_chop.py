@@ -92,7 +92,6 @@ def on_realtime(scriptOp, message):
 
 
 def onCook(scriptOp):
-    import numpy as np
     clk = _clock(scriptOp)
     clk.smoothing = float(_p(scriptOp, "Smoothing", 0.18))
     clk.set_manual_bpm(float(_p(scriptOp, "Bpm", 120.0)))
@@ -111,14 +110,13 @@ def onCook(scriptOp):
 
     sine = 0.5 + 0.5 * math.sin(beat_phase * 2.0 * math.pi)
     vals = {"bpm": bpm, "beat": beat_phase, "bar": bar_phase, "sine": sine, "pulse": pulse}
-    out = np.array([[vals[c]] for c in _CHANNELS], dtype=np.float32)
+    # Named single-sample channels (appendChan is the documented way to name
+    # Script CHOP channels; everything downstream reads these by name).
     scriptOp.clear()
-    scriptOp.copyNumpyArray(np.ascontiguousarray(out))
-    for i, name in enumerate(_CHANNELS):
-        try:
-            scriptOp[i].name = name
-        except Exception:
-            pass
+    scriptOp.numSamples = 1
+    for name in _CHANNELS:
+        ch = scriptOp.appendChan(name)
+        ch[0] = float(vals[name])
 
 
 setupParameters = onSetupParameters

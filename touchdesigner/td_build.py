@@ -168,7 +168,11 @@ def _cook_driver(container, sim_op):
         "    except Exception:\n"
         "        pass\n"
     )
-    _setpar(drv, "fs", True)     # Frame Start
+    # The Execute DAT's Frame Start toggle is 'framestart'; 'fs' is kept as a
+    # fallback spelling for older builds. Without one of these the driver never
+    # fires and hidden scenes (Freerun All) would not advance.
+    if not _setpar(drv, "framestart", True):
+        _setpar(drv, "fs", True)
     _setpar(drv, "active", True)
 
 
@@ -805,8 +809,18 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     for idx, out in enumerate(outs):
         _connect(out, switch_a, idx)
         _connect(out, switch_b, idx)
-    _expr(switch_a, "index", "parent().par.Scene.menuIndex")
-    _expr(switch_b, "index", "parent().par.Nextscene.menuIndex")
+    # A Cross TOP cooks both inputs every frame, so with a plain A/B wiring the
+    # armed-but-invisible deck would render its whole chain (render, trails,
+    # bloom -- or a raymarch) for nothing. Instead, whenever a deck contributes
+    # nothing to the mix it points at the *same* scene as the other deck; TD
+    # cooks that node once per frame, so the idle deck is free. The scenes'
+    # Active flags below use the same rule, so sim and render agree.
+    _expr(switch_a, "index",
+          "parent().par.Scene.menuIndex if parent().par.Crossfade < 1 "
+          "else parent().par.Nextscene.menuIndex")
+    _expr(switch_b, "index",
+          "parent().par.Nextscene.menuIndex if parent().par.Crossfade > 0 "
+          "else parent().par.Scene.menuIndex")
 
     cross = _create(base, "crossTOP", "crossfade", 160, 0)
     _connect(switch_a, cross, 0)
@@ -905,17 +919,6 @@ def _glsl_uniforms(top, scalars, start=0):
             _setpar(top, px, val)
         slot += 1
     return slot
-
-
-def _glsl_vec2(top, slot, uname, ex, ey):
-    _setpar(top, f"uniname{slot}", uname)
-    for comp, e in (("x", ex), ("y", ey)):
-        pn = f"value{slot}{comp}"
-        if isinstance(e, str):
-            _bindexpr(top, pn, e)
-        else:
-            _setpar(top, pn, e)
-    return slot + 1
 
 
 def _react_exprs(reactor):
@@ -1064,24 +1067,25 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     except Exception:
         pass
 
-    n = _glsl_vec2(state, 0, "uRes", "me.width", "me.height")
-    n = _glsl_uniforms(state, [
+    # Resolution comes from TD's built-in uTDOutputInfo.res inside the shaders
+    # (the #define at the top of each .frag), so every Vectors slot here is a
+    # real uniform the shader declares.
+    _glsl_uniforms(state, [
         ("uTime", "absTime.seconds"),
         ("uBass", rex["bass"]), ("uMid", rex["mid"]), ("uHigh", rex["high"]),
         ("uLevel", rex["level"]), ("uBeat", rex["beat"]),
         ("uFeed", "parent().par.Feed"), ("uKill", "parent().par.Kill"),
         ("uReseed", "1.0 if (absTime.frame - parent().fetch('rs', -99)) in (0, 1) else 0.0"),
-    ], start=n)
+    ])
 
     color = _create(c, "glslTOP", "rd_color", 20, 0)
     _connect(state, color, 0)
     _setpar(color, "pixeldat", _shader_dat(c, "rd_color_src", "rd_color.frag", 20, 150))
-    nn = _glsl_vec2(color, 0, "uRes", "me.width", "me.height")
     _glsl_uniforms(color, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
         ("uHigh", rex["high"]), ("uBeat", rex["beat"]),
         ("uPalette", "parent().par.Palette.menuIndex"),
-    ], start=nn)
+    ])
 
     out = _glow(c, color, size=8.0, x=240)
     _cook_driver(c, state)  # keep the feedback advancing while the scene is live
@@ -1110,13 +1114,12 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
     _setpar(sdf, "resolutionw", 1280)
     _setpar(sdf, "resolutionh", 720)
     _setpar(sdf, "pixeldat", _shader_dat(c, "sdf_src", "raymarch.frag", -120, 160))
-    n = _glsl_vec2(sdf, 0, "uRes", "me.width", "me.height")
     _glsl_uniforms(sdf, [
         ("uTime", "absTime.seconds"),
         ("uBass", rex["bass"]), ("uMid", rex["mid"]), ("uHigh", rex["high"]),
         ("uLevel", rex["level"]), ("uBeat", rex["beat"]), ("uBar", tex["bar"]),
         ("uPalette", "parent().par.Palette.menuIndex"),
-    ], start=n)
+    ])
 
     out = _glow(c, sdf, size=10.0, x=120)
     _cook_driver(c, sdf)
@@ -1139,11 +1142,10 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
     _setpar(ov, "pixeldat", _shader_dat(container, name + "_src", "waveform_tunnel.frag", x, y - 320))
     _connect(reactor.op("wave_tex"), ov, 0)
     _connect(reactor.op("spec_tex"), ov, 1)
-    n = _glsl_vec2(ov, 0, "uRes", "me.width", "me.height")
     _glsl_uniforms(ov, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
         ("uBeat", rex["beat"]), ("uBass", rex["bass"]), ("uPalette", 3),
-    ], start=n)
+    ])
 
     lvl = _create(container, "levelTOP", name + "_op", x + 160, y - 160)
     _connect(ov, lvl)
@@ -1163,14 +1165,13 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     post = _create(container, "glslTOP", name, x, y)
     _setpar(post, "pixeldat", _shader_dat(container, name + "_src", "post_fx.frag", x, y - 170))
     _connect(src, post, 0)
-    n = _glsl_vec2(post, 0, "uRes", "me.width", "me.height")
     _glsl_uniforms(post, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
         ("uBeat", rex["beat"]), ("uHigh", rex["high"]), ("uBar", tex["bar"]),
         ("uKaleido", "parent().par.Kaleido"),
         ("uRGBShift", "parent().par.Rgbshift"),
         ("uPunch", "parent().par.Punch"),
-    ], start=n)
+    ])
     return post
 
 

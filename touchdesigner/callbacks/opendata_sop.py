@@ -115,7 +115,10 @@ def onCook(scriptOp):
     except Exception:
         pass
 
-    quant = round(frac, 2)
+    # Quantise the reveal to whole points: tracks have n_points samples, so
+    # rebuilding more often than that re-appends identical geometry (the old
+    # 1%-of-frac step did about a third more rebuilds than could show).
+    quant = int(frac * show.n_points)
     if st.get("last_built") == quant:
         return
     st["last_built"] = quant

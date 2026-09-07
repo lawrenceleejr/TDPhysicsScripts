@@ -95,7 +95,13 @@ def onCook(scriptOp):
     frame = absTime.frame
     if rebuilt or st.get("out_frame") != frame:
         if sim.last_frame != frame:
-            sim.step(1.0 / 60.0)
+            # One frame of the op's own timeline, so 30 fps and 60 fps projects
+            # see the same motion per second.
+            try:
+                dt = 1.0 / max(float(scriptOp.time.rate), 1.0)
+            except Exception:
+                dt = 1.0 / 60.0
+            sim.step(dt)
             sim.last_frame = frame
         pos = sim.positions.astype(np.float32)
         field = sim.stress() if isinstance(sim, ShapeMatchedSoftBody) else sim.speeds()

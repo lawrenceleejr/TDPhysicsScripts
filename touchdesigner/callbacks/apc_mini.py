@@ -12,7 +12,7 @@
 # CONTROL MAP (APC mini mk2, factory/Generic mode, MIDI channel 1)
 # ---------------------------------------------------------------------------
 #   8x8 RGB GRID (notes 0..63, note = row*8 + col, row 0 = bottom)
-#       columns 0..5 = the six scenes; rows 0..6 = the seven palettes.
+#       columns 0..7 = the first eight scenes; rows 0..7 = the palettes.
 #       Press pad (col,row): instant-cut to that scene on deck A AND set that
 #       scene's palette. Each pad glows in its palette's signature colour; the
 #       live scene's column is bright and its active-palette pad pulses.
@@ -23,6 +23,12 @@
 #   SCENE BUTTONS (round, right column, notes 112..119)
 #       112 = Reset the controller (re-handshake + repaint every LED).
 #       113 = Re-fire the live scene (new collision / next event / reset).
+#       114.. = launch the scenes past the 8-wide grid (8, 9, 10 ...).
+#
+#   LEDs are sent by difference: repaint() remembers what each pad was last
+#   told and only re-sends pads that changed, so riding a fader (which
+#   repaints on every value change) costs a handful of messages, not ~90.
+#   reset() forgets that memory first, which is what makes it a hard resync.
 #   FADERS (CC 48..56, channel 1)
 #       fader 9 / master (CC56) = Crossfade (A/B blend).
 #       fader 1 (CC48) = live scene Trail   fader 2 (CC49) = live scene Orbit
@@ -48,7 +54,8 @@ REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent",
                 "Reseed", "Reseed", "Reset", "Reset", "Reseed"]
 N_SCENES = len(SCENE_NAMES)
 N_PAL = len(_PALETTES)
-N_GRID_COLS = 8  # the APC grid is 8 wide; scene 8 lives on a scene button
+N_GRID_COLS = 8  # the APC grid is 8 wide; scenes 8+ live on scene buttons
+N_ARM = 6        # track buttons 1..6 arm deck B; 7 = Cut, 8 = Freerun
 
 # --- APC mini mk2 hardware map -------------------------------------------
 TRACK_BTN = [100, 101, 102, 103, 104, 105, 106, 107]  # bottom round buttons
@@ -195,12 +202,35 @@ def _ledout(apc):
         return None
 
 
-def _pad(apc, note, velocity, channel=CH_BRIGHT):
+# What each surface's LEDs were last told: {apc.path: {note: (velocity, channel)}}
+_LED_STATE = {}
+
+
+def _led_cache(apc):
+    try:
+        key = apc.path
+    except Exception:
+        key = id(apc)
+    return _LED_STATE.setdefault(key, {})
+
+
+def _pad(apc, note, velocity, channel=CH_BRIGHT, force=False):
+    """Light one pad -- only if that differs from what it was last sent."""
+    cache = _led_cache(apc)
+    want = (int(velocity), int(channel))
+    if not force and cache.get(int(note)) == want:
+        return
     o = _ledout(apc)
     if o is None:
         return
     try:
-        o.sendMIDI("note", channel, int(note), int(velocity))
+        # sendNoteOn is the documented MIDI Out CHOP call; older builds only
+        # had the generic sendMIDI.
+        if hasattr(o, "sendNoteOn"):
+            o.sendNoteOn(int(channel), int(note), int(velocity))
+        else:
+            o.sendMIDI("note", int(channel), int(note), int(velocity))
+        cache[int(note)] = want
     except Exception:
         pass
 
@@ -215,11 +245,15 @@ def _grid_note(col, row):
 
 
 def _blank(apc):
-    """Turn every LED off -- the first half of a clean resync."""
+    """Turn every LED off, unconditionally -- the first half of a resync.
+
+    Forgets the LED cache first, so a controller that was hot-plugged or came
+    up dark really is repainted from scratch afterwards."""
+    _led_cache(apc).clear()
     for n in range(64):
-        _pad(apc, n, 0, CH_BRIGHT)
+        _pad(apc, n, 0, CH_BRIGHT, force=True)
     for n in TRACK_BTN + SCENE_BTN:
-        _round(apc, n, ROUND_OFF)
+        _pad(apc, n, ROUND_OFF, CH_BRIGHT, force=True)
 
 
 # ---------------------------------------------------------------------------
@@ -256,20 +290,25 @@ def repaint(apc):
                 _pad(apc, note, 0, CH_BRIGHT)
 
     # Track buttons: deck B arming + transport.
-    for col in range(6):
+    for col in range(N_ARM):
         _round(apc, TRACK_BTN[col], ROUND_BLINK if col == nxt else ROUND_OFF)
     _round(apc, BTN_CUT, ROUND_ON if cf > 0 else ROUND_OFF)
     _round(apc, BTN_FREERUN, ROUND_ON if freerun else ROUND_OFF)
 
-    # Scene buttons: utility indicators (so you can always find them).
-    for n in SCENE_BTN:
-        _round(apc, n, ROUND_OFF)
-    _round(apc, BTN_RESET, ROUND_ON)
-    _round(apc, BTN_REFIRE, ROUND_ON)
-    # Any scenes past the 8-wide grid get a dedicated launch button.
+    # Scene buttons: utility indicators (so you can always find them), then a
+    # launch button for every scene past the 8-wide grid. Decide each button's
+    # state first and send once -- an off-then-on pass would flash the LEDs
+    # and defeat the send-by-difference cache.
+    want = {n: ROUND_OFF for n in SCENE_BTN}
+    want[BTN_RESET] = ROUND_ON
+    want[BTN_REFIRE] = ROUND_ON
     for extra in range(N_GRID_COLS, N_SCENES):
-        btn = SCENE_BTN[2 + (extra - N_GRID_COLS)]
-        _round(apc, btn, ROUND_BLINK if live == extra else ROUND_ON)
+        k = 2 + (extra - N_GRID_COLS)
+        if k >= len(SCENE_BTN):
+            break                                   # more scenes than buttons
+        want[SCENE_BTN[k]] = ROUND_BLINK if live == extra else ROUND_ON
+    for n, state in want.items():
+        _round(apc, n, state)
 
 
 def reset(apc):
@@ -311,13 +350,17 @@ def _on_note(apc, t, note):
         repaint(apc)
         return
     if note in TRACK_BTN:
-        i = TRACK_BTN.index(note)
-        if i < grid_scenes:
-            _set_menu(t, "Nextscene", i)            # arm deck B
-        elif note == BTN_CUT:
+        # Transport first: the last two track buttons are Cut and Freerun,
+        # whatever the scene count (checking the arm range first would swallow
+        # them once there were more than six scenes).
+        if note == BTN_CUT:
             _pulse(t, "Cut")                        # commit the crossfade
         elif note == BTN_FREERUN:
             _toggle(t, "Freerunall")
+        else:
+            i = TRACK_BTN.index(note)
+            if i < min(N_ARM, N_SCENES):
+                _set_menu(t, "Nextscene", i)        # arm deck B
         repaint(apc)
         return
     if note in SCENE_BTN:
@@ -330,7 +373,7 @@ def _on_note(apc, t, note):
             # Launch buttons for any scenes past the 8-wide grid.
             i = SCENE_BTN.index(note)
             extra = N_GRID_COLS + (i - 2)
-            if 2 <= i and N_GRID_COLS <= extra < N_SCENES:
+            if i >= 2 and N_GRID_COLS <= extra < N_SCENES:
                 _set_menu(t, "Scene", extra)
         repaint(apc)
 
