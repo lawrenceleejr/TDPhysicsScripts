@@ -513,8 +513,7 @@ def build_ising(dest=None, name="ising"):
     dest = dest or op("/")  # noqa: F821
     c = _create(dest, "baseCOMP", name)
     sim = _create(c, "scriptTOP", "sim", -300, 0)
-    _setpar(sim, "resolutionw", 256)
-    _setpar(sim, "resolutionh", 256)
+    _set_res(sim, 256, 256)     # the lattice size; copyNumpyArray resizes to match
     _install_callbacks(sim, "ising_top.py")
     out = _glow(c, sim, size=6.0, x=-40, y=0)
     _cook_driver(c, sim)

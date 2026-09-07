@@ -77,9 +77,13 @@ install** to use these scripts inside TD.
    ./tools/run_td.sh           # git pull, open TD, rebuild from latest files
    ./tools/run_td.sh --check   # pull, rebuild headless, print build_report.txt, quit
    ```
-4. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
-   mode), and change the **`Scene`** parameter to switch visuals — or set
-   **`Nextscene`** and ride **`Crossfade`** to blend between two.
+4. **Drive it.** The controls are *parameters on the `PhysicsVJ` node* at the
+   root of the network (the launcher leaves it selected for you): click
+   `PhysicsVJ` once and its parameter dialog appears top-right, or press
+   **P** with it selected. On its **PhysicsVJ** page, **`Scene`** is a menu —
+   pick a scene to cut to it; set **`Nextscene`** and drag **`Crossfade`** to
+   blend between two. Its **`out`** TOP is the master picture: middle-click
+   the node to view it, or go to Perform mode.
 
 Prefer to skip the launcher? Paste this into a Text DAT and Run it:
 ```python

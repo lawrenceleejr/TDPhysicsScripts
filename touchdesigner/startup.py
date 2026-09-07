@@ -150,4 +150,28 @@ def run(root, build=None):
 
     if os.environ.get("PHYSICSVJ_QUIT"):
         _quit()
+    elif base is not None:
+        _show_controls(root, base)
     return base
+
+
+def _show_controls(root, base):
+    """Park the network editor at the root with the show COMP selected, so its
+    parameter dialog (Scene, Nextscene, Crossfade, Freerun All) is what you see
+    when TD opens -- the controls the README talks about live on that node."""
+    try:
+        ui = _td_global("ui")
+        for pane in ui.panes:
+            if pane.type == _td_global("PaneType").NETWORKEDITOR:
+                pane.owner = root
+                break
+    except Exception:
+        try:
+            ui.panes[0].owner = root
+        except Exception:
+            pass
+    try:
+        base.current = True
+        base.selected = True
+    except Exception:
+        pass
