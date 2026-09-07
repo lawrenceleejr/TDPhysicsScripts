@@ -67,7 +67,13 @@ class NBodySim:
         """
         pos = self.pos
         sq = np.einsum("ij,ij->i", pos, pos)        # |p_i|^2
-        r2 = pos @ pos.T                            # p_i . p_j
+        # The two matmuls run through the platform BLAS; Apple Accelerate leaves
+        # floating-point exception flags set after finite products, so numpy
+        # would report divide-by-zero/overflow/invalid here every frame for
+        # nothing. The values are finite (softening bounds 1/r^3), so silence
+        # the flags around the products only.
+        with np.errstate(all="ignore"):
+            r2 = pos @ pos.T                        # p_i . p_j
         r2 *= -2.0
         r2 += sq[:, None]
         r2 += sq[None, :]                           # now |p_i - p_j|^2
@@ -78,7 +84,8 @@ class NBodySim:
         np.reciprocal(w, out=w)                     # 1 / r^3
         np.fill_diagonal(w, 0.0)                    # no self-force
         w *= self.mass[None, :]                     # w_ij = m_j / r_ij^3
-        acc = w @ pos
+        with np.errstate(all="ignore"):
+            acc = w @ pos
         acc -= w.sum(axis=1)[:, None] * pos
         acc *= self.G
         return acc

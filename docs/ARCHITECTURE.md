@@ -138,9 +138,10 @@ built once and only its point colours change.
 6. The `cook_driver` force-cooks **`state`**, not the SOP: the CHOP is what has
    to run every frame.
 
-If the field renders as flat white, step 3 is where to look — the scope
-parameter names have moved between TouchDesigner versions, and `td_build` sets
-several spellings defensively rather than assuming one. If it renders as
+If the field renders as flat white, step 3 is where to look: the CHOP to SOP
+matches channels to attributes **by name**, so the CHOP's channels must be
+called `Cd(0) Cd(1) Cd(2) Cd(3)` (`td_build` inserts a Rename CHOP, `state_cd`,
+between `state` and `paint` for exactly this). If it renders as
 nothing, check that the CHOP's sample count matches the SOP's point count
 (`state` info → `numSamples`); a mismatch means the two are on different
 fields or disagree about the marks toggle.
@@ -285,7 +286,19 @@ build. Glance at these:
    channels), because every binding downstream reads them by name
    (`op('Reactor/analyze')['bass']`). If a build ever lacks `appendChan`, the
    channels would come out as `chan0..`, and the audio bindings read 0.
-6. **Execute DAT frame-start flag.** The cook drivers set `framestart` (with
+6. **`ParMode` is not importable everywhere.** TD injects it into DAT scripts
+   but not into imported modules, and on a 2025 build `from td import ParMode`
+   came back `None`, which silently left *every* expression in the show unset
+   (decks, `Active`, crossfade, orbit, trails, all uniforms). `td_build._expr`
+   now takes the enum from the parameter itself (`type(par.mode)`) and logs
+   every binding it could not make, so a repeat would show in the report as
+   dozens of lines rather than as a show that does not switch scenes.
+7. **CHOP to SOP maps channels to attributes by name.** Channels must be
+   called `Cd(0)..Cd(3)` (the SOP to CHOP convention); the Feynman scene
+   renames its `c0..c3` with a Rename CHOP (`state_cd`) and names them in
+   the CHOP to SOP's Channel Scope. If the field renders flat white, that
+   Rename CHOP is where to look.
+8. **Execute DAT frame-start flag.** The cook drivers set `framestart` (with
    `fs` as a fallback spelling). If neither exists on a build, the visible
    scene still animates — TD pulls its Script OP every frame through the
    render — but hidden scenes under `Freerun All` would not advance.
