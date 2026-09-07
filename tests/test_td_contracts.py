@@ -472,3 +472,17 @@ def test_master_chain_has_an_fx_bypass_and_is_cooked_at_build():
     assert "for o in (cross, mixed, post, final):" in build_all
     # Par objects are compared by value, never as objects
     assert "par.Crossfade < 1" not in src and "par.Crossfade > 0" not in src
+
+
+def test_overlay_is_switch_gated_and_pop_binds_the_reported_names():
+    """A Level of an errored GLSL TOP propagates the error; the overlay is
+    gated by a Switch TOP so it is not cooked unless Wavevis is on. The POP
+    strength binds 'radialstrength', the name the 2025 build reported."""
+    src = _src("touchdesigner", "td_build.py")
+    overlay = src[src.index("def _waveform_overlay("):src.index("def _post_fx(")]
+    assert '"switchTOP"' in overlay and "Wavevis.eval()" in overlay
+    assert '"levelTOP"' not in overlay
+    assert '"radialstrength"' in src and '("timeintegration"' in src
+    assert "_report_master_chain(" in src
+    startup = _src("touchdesigner", "startup.py")
+    assert "_glsl_compile_log(" in startup and '"infoDAT"' in startup

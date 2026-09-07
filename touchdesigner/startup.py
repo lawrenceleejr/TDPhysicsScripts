@@ -60,6 +60,8 @@ def _collect_errors(root, names=("PhysicsVJ", "APCShow")):
                 w = ""
             msg = "\n".join(x for x in (e, w) if x).strip()
             if msg:
+                if "compile" in msg.lower():
+                    msg += "\n" + _glsl_compile_log(o)
                 out.append("%s:\n  %s" % (o.path, msg.replace("\n", "\n  ")))
     except Exception as e2:
         out.append("(error walk failed: %s)" % e2)
@@ -82,6 +84,35 @@ def _td_global(name):
         except Exception:
             pass
     return None
+
+
+def _glsl_compile_log(o):
+    """The shader compile log of a GLSL TOP/MAT, read through a temporary Info
+    DAT (the node itself only says "has compile errors, use an Info DAT")."""
+    info = None
+    try:
+        info = o.parent().create("infoDAT", "glsl_log_tmp")
+        info.par.op = o
+        info.cook(force=True)
+        text = str(info.text).strip()
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        # Keep the compile-result sections; drop the long list of uniforms.
+        keep, on = [], False
+        for ln in lines:
+            low = ln.lower()
+            if "compile" in low or "error" in low or "warning" in low:
+                on = True
+            if on:
+                keep.append(ln)
+        return "-- shader log --\n" + "\n".join(keep[:60] or lines[:60])
+    except Exception as e:
+        return "(could not read the shader log: %s)" % e
+    finally:
+        try:
+            if info is not None:
+                info.destroy()
+        except Exception:
+            pass
 
 
 def _quit():

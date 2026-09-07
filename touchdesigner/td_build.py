@@ -628,7 +628,10 @@ def _cd_channel_names(probe):
     except Exception as e:
         print(f"[td_build] Cd channel-name probe failed: {e}")
     if len(names) < 3:
-        print(f"[td_build] Cd channel-name probe found {names!r}; using Cd_0_..Cd_3_")
+        print(f"[td_build] Cd channel-name probe found {names!r}; using Cd_0_..Cd_3_ "
+              "(the CHOP to SOP accepts these: it fills the attribute's components "
+              "from the scoped channels in order)")
+        _print_pars(probe)
         names = ["Cd_0_", "Cd_1_", "Cd_2_", "Cd_3_"]
     return " ".join(names[:4])
 
@@ -1032,11 +1035,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
                 print(f"[td_build] {o.path}: {err.strip()}")
         except Exception:
             pass
-    try:
-        print(f"[td_build] master chain: deck_a -> {switch_a.inputs[int(switch_a.par.index.eval())].path}, "
-              f"out is {final.width}x{final.height}")
-    except Exception as e:
-        print(f"[td_build] master chain check failed: {e}")
+    _report_master_chain(switch_a, switch_b, cross, final, len(outs))
 
     # Make the whole show breathe: bind scene params to the audio + tempo.
     _reactive_bindings(base, reactor, tempo)
@@ -1053,6 +1052,27 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             print(f"[td_build] APC surface skipped: {e}")
 
     return base
+
+
+def _report_master_chain(switch_a, switch_b, cross, final, n_scenes):
+    """One line per fact about the master chain, for the build report. Each
+    is fetched on its own so one missing attribute cannot hide the rest."""
+    def fact(label, fn):
+        try:
+            print(f"[td_build] master: {label} = {fn()}")
+        except Exception as e:
+            print(f"[td_build] master: {label} = ? ({e})")
+
+    fact("scenes wired", lambda: n_scenes)
+    fact("deck_a inputs", lambda: f"{len(switch_a.inputs)}: " + " ".join(i.path for i in switch_a.inputs))
+    fact("deck_b inputs", lambda: len(switch_b.inputs))
+    fact("deck_a index expr", lambda: switch_a.par.index.expr)
+    fact("deck_a index value", lambda: switch_a.par.index.eval())
+    fact("deck_a size", lambda: f"{switch_a.width}x{switch_a.height}")
+    fact("cross inputs", lambda: len(cross.inputs))
+    fact("cross value", lambda: cross.par.cross.eval())
+    fact("out size", lambda: f"{final.width}x{final.height}")
+    fact("out inputs", lambda: " -> ".join(i.path for i in final.inputs))
 
 
 # ===========================================================================
@@ -1348,8 +1368,14 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
 # Master post-FX + waveform overlay
 # ---------------------------------------------------------------------------
 def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
-    """Composite a creative waveform/spectrum visualiser over ``src``,
-    gated by the 'Wavevis' toggle. Returns the mixed TOP (or ``src``)."""
+    """Composite a creative waveform/spectrum visualiser over ``src``, gated
+    by the 'Wavevis' toggle. Returns the mixed TOP (or ``src``).
+
+    The gate is a Switch TOP, not a Level opacity: a Switch only cooks the
+    input it shows, so with Wavevis off the overlay GLSL TOP is never pulled
+    and a shader that fails to compile on some build cannot black out the
+    master output (a Level of an errored TOP propagates the error).
+    """
     if reactor is None or reactor.op("wave_tex") is None:
         return src
     rex = _react_exprs(reactor)
@@ -1363,15 +1389,18 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
         ("uBeat", rex["beat"]), ("uBass", rex["bass"]), ("uPalette", 3),
     ])
 
-    lvl = _create(container, "levelTOP", name + "_op", x + 160, y - 160)
-    _connect(ov, lvl)
-    _expr(lvl, "opacity", "parent().par.Wavevis")
-    comp = _create(container, "compositeTOP", name, x + 160, y)
+    comp = _create(container, "compositeTOP", name + "_over", x + 160, y - 160)
     _setpar(comp, "operand", "over")
-    _connect(lvl, comp, 0)   # overlay on top
+    _connect(ov, comp, 0)    # overlay on top
     _connect(src, comp, 1)
     _set_res(comp)
-    return comp
+
+    gate = _create(container, "switchTOP", name, x + 160, y)
+    _connect(src, gate, 0)   # Wavevis off: the plain mix, overlay not cooked
+    _connect(comp, gate, 1)
+    _expr(gate, "index", "1 if parent().par.Wavevis.eval() else 0")
+    _set_res(gate)
+    return gate
 
 
 def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
@@ -1498,7 +1527,7 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         _setpar_any(particle, ("lifeexpect", "life", "lifespan"), 6.0)
         _setpar_any(particle, ("lifevariance", "lifevar"), 2.0)
         _setpar_any(particle, ("velocitydamping", "damping", "drag"), 0.04)
-        _setpar_any(particle, ("enabletimeintegration", "integrate"), True, quiet=True)
+        _setpar_any(particle, ("timeintegration", "enabletimeintegration"), True, quiet=True)
         # Forces in a feedback loop: a radial push + turbulent noise.
         force = _try_create(geo, "forceradialPOP", "force")
         noise = _try_create(geo, "noisePOP", "turb")
@@ -1506,10 +1535,12 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         chain_tail = particle
         if force is not None:
             _connect(chain_tail, force, 0)
-            if not _bindexpr_any(force, ("force", "strength", "magnitude", "amount", "scale"),
+            # forceradialPOP (2025): 'radial' enables the radial term, its
+            # magnitude is 'radialstrength' (negative pulls toward the centre).
+            _setpar_any(force, ("radial",), True, quiet=True)
+            if not _bindexpr_any(force, ("radialstrength", "force", "strength"),
                                  f"-2.0 - 6.0*{rex['bass']}"):
                 _print_pars(force)          # so the report shows the real names
-                _print_pars(particle)
             chain_tail = force
         if noise is not None:
             _connect(chain_tail, noise, 0)
