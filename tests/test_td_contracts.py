@@ -401,8 +401,11 @@ def test_builder_uses_the_parameter_spellings_this_build_reported():
     src = _src("touchdesigner", "td_build.py")
     assert '("cr", "colorr")' in src and '("cg", "colorg")' in src and '("cb", "colorb")' in src
     assert '("vdat", "vertexdat")' in src and '("pdat", "pixeldat")' in src
-    assert "Cd(0) Cd(1) Cd(2) Cd(3)" in src           # CHOP to SOP maps by name
-    assert '"renameCHOP"' in src
+    # CHOP to SOP maps by name, and the names are probed from a SOP to CHOP on
+    # the field itself rather than assumed (they hold no parentheses on 2025).
+    assert '"soptoCHOP"' in src and "_cd_channel_names(probe)" in src
+    assert '"renameCHOP"' in src and '"c*"' in src   # Script CHOP numbers from 1
+    assert "Cd(0)" not in src.replace("Cd(0)..Cd(3)", "")
     assert "_ensure_active(c)" in src                 # POP scene has an Active flag
 
 

@@ -26,8 +26,6 @@ from physics.feynman import FeynmanShow
 from physics import palette
 
 _STATE = {}
-# The channel names a CHOP to SOP looks up for the Cd (colour) attribute.
-CD_CHANNELS = ["Cd(0)", "Cd(1)", "Cd(2)", "Cd(3)"]
 
 
 def _state(scriptOp):
@@ -154,20 +152,16 @@ def onCook(scriptOp):
             dt = 1.0 / 60.0 if last is None else min(0.05, max(0.0, now - last))
             show.step(dt)
 
-    out = np.ascontiguousarray(show.colours().T.astype(np.float32))
+    rgba = show.colours()
+    # Premultiply: a point past a line's growing tip has alpha 0, and on a build
+    # whose Cd has no alpha component the colour itself must go to black (on a
+    # black background) for the line to read as trimmed. Alpha is still sent.
+    out = np.ascontiguousarray(rgba.T.astype(np.float32))
+    out[:3] *= out[3]
+    # Channels come out numbered (c1..c4 on 2025); td_build's Rename CHOP gives
+    # them the names the CHOP to SOP wants for Cd (Channel.name is not writable
+    # from here).
     scriptOp.copyNumpyArray(out, baseName="c")
-    # The CHOP to SOP downstream matches channels to the Cd attribute by
-    # name, Cd(0)..Cd(3). Rename in place when this build allows a Script CHOP
-    # to (it costs nothing); the Rename CHOP td_build wires after this op does
-    # the same job on builds that do not, and passes these through untouched.
-    if st.get("renamed") is not False:
-        try:
-            for i in range(4):
-                scriptOp[i].name = CD_CHANNELS[i]
-            st["renamed"] = True
-        except Exception:
-            st["renamed"] = False
-
 
 setupParameters = onSetupParameters
 cook = onCook
