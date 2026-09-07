@@ -413,3 +413,44 @@ def test_startup_reads_td_globals_through_the_td_module():
     src = _src("touchdesigner", "startup.py")
     assert "_td_global(\"app\")" in src and "_td_global(\"project\")" in src
     assert "app.version, app.build" in src
+
+
+def test_instancing_reads_channel_names_off_the_sim():
+    """copyNumpyArray numbers channels from 1 on 2025 (c1..c7), from 0 before;
+    a hard-coded c0 mapping shifted position to (0, x, y) and colour to
+    (z, r, g). Every instanced scene must go through _instance_channels."""
+    src = _src("touchdesigner", "td_build.py")
+    assert '"instancetx", "c0"' not in src
+    assert src.count("_instance_channels(") >= 4          # def + 3 scenes
+    td_build = importlib.import_module("touchdesigner.td_build")
+
+    class _Ch:
+        def __init__(self, n):
+            self.name = n
+
+    class _Chop(_Op):
+        def cook(self, force=False):
+            self.cooked = True
+
+        def chans(self):
+            return [_Ch("c%d" % i) for i in range(1, 8)]     # 1-based, as on 2025
+    chop = _Chop("/scene/sim")
+    assert td_build._chan_names(chop, 7) == ["c1", "c2", "c3", "c4", "c5", "c6", "c7"]
+    geo = _Op("/scene/geo", pars=[(n, "") for n in (
+        "instancing", "instanceop", "instancetx", "instancety", "instancetz",
+        "instancesx", "instancesy", "instancesz", "instancer", "instanceg", "instanceb",
+        "instancecolormode")])
+    td_build._instance_channels(geo, chop)
+    assert (geo.par.instancetx.val, geo.par.instancety.val, geo.par.instancetz.val) == ("c1", "c2", "c3")
+    assert (geo.par.instancer.val, geo.par.instanceg.val, geo.par.instanceb.val) == ("c4", "c5", "c6")
+    assert geo.par.instancesx.val == "c7"
+
+
+def test_every_explicit_resolution_sets_custom_mode():
+    """resolutionw/h are ignored unless Output Resolution is 'custom'; the
+    Render TOP sat at 256x256 and the show came out square and blocky."""
+    src = _src("touchdesigner", "td_build.py")
+    # resolutionw/h are set in exactly one place, _set_res, right after the mode.
+    assert src.count('"resolutionw"') == 1 and src.count('"resolutionh"') == 1
+    assert src.index('"outputresolution", "custom"') < src.index('"resolutionw"')
+    assert src.count("_set_res(") >= 8                  # render, glow, HUD, GLSL, post

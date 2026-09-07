@@ -255,6 +255,56 @@ def _custom_page(comp, name):
     return comp.appendCustomPage(name)
 
 
+MASTER_RES = (1280, 720)   # the show's output size; every scene's 'out' is this
+
+
+def _set_res(top, w=MASTER_RES[0], h=MASTER_RES[1]):
+    """Give a TOP an explicit size. resolutionw/h only apply once the TOP's
+    Output Resolution mode is 'custom' -- without that the Render TOP sat at
+    its 256x256 default and the whole show came out square and blocky."""
+    _setpar(top, "outputresolution", "custom")
+    _setpar(top, "resolutionw", w)
+    _setpar(top, "resolutionh", h)
+
+
+def _chan_names(chop, n, base="c"):
+    """The names of ``chop``'s first ``n`` channels, read off the cooked op.
+
+    copyNumpyArray numbers channels from 0 on older builds and from 1 on 2025
+    (c1..c7), so any hard-coded 'c0' mapping is off by one on one of them --
+    which is how positions became (0, x, y) and inferno came out green. Ask
+    the CHOP instead; fall back to base0.. only if it has not cooked."""
+    try:
+        chop.cook(force=True)
+    except Exception as e:
+        print(f"[td_build] cook of {chop.path} raised: {e}")
+    try:
+        names = [ch.name for ch in chop.chans()]
+    except Exception:
+        names = []
+    if len(names) >= n:
+        return names[:n]
+    print(f"[td_build] {chop.path} has {len(names)} channels, expected {n}; "
+          f"assuming {base}0..{base}{n - 1}")
+    return [f"{base}{i}" for i in range(n)]
+
+
+def _instance_channels(geo, chop):
+    """Point a Geometry COMP's instancing at the 7 channels the sim callbacks
+    emit, whatever this build calls them: 0-2 position, 3-5 colour, 6 scale."""
+    ch = _chan_names(chop, 7)
+    _setpar(geo, "instancing", True)
+    _setpar(geo, "instanceop", chop)
+    for par, name in (("instancetx", ch[0]), ("instancety", ch[1]), ("instancetz", ch[2]),
+                      ("instancesx", ch[6]), ("instancesy", ch[6]), ("instancesz", ch[6]),
+                      ("instancer", ch[3]), ("instanceg", ch[4]), ("instanceb", ch[5])):
+        _setpar(geo, par, name)
+    # Per-instance colour multiplies the MAT colour. Falls back to the MAT
+    # colour if the mode name differs on this version -- still looks good.
+    _setpar(geo, "instancecolormode", "mult")
+    return ch
+
+
 # ---------------------------------------------------------------------------
 # Reusable visual building blocks
 # ---------------------------------------------------------------------------
@@ -287,20 +337,7 @@ def _instanced_geo(container, chop, name, base_color, x, y):
     _setpar(mat, "applypointcolor", False)
 
     _setpar(geo, "material", mat)          # assign the OP (TD stores the path)
-    _setpar(geo, "instancing", True)
-    _setpar(geo, "instanceop", chop)
-    _setpar(geo, "instancetx", "c0")
-    _setpar(geo, "instancety", "c1")
-    _setpar(geo, "instancetz", "c2")
-    _setpar(geo, "instancesx", "c6")
-    _setpar(geo, "instancesy", "c6")
-    _setpar(geo, "instancesz", "c6")
-    # Per-instance colour (gradient by speed/pt). Falls back to MAT colour if
-    # the colour mode name differs on this version -- still looks good.
-    _setpar(geo, "instancecolormode", "mult")
-    _setpar(geo, "instancer", "c3")
-    _setpar(geo, "instanceg", "c4")
-    _setpar(geo, "instanceb", "c5")
+    _instance_channels(geo, chop)
     return geo, mat
 
 
@@ -337,8 +374,7 @@ def _render(container, geo, cam, light, name="render", x=200, y=200, w=1280, h=7
     _setpar(r, "geometry", geo)
     if light is not None:
         _setpar(r, "lights", light)
-    _setpar(r, "resolutionw", w)
-    _setpar(r, "resolutionh", h)
+    _set_res(r, w, h)
     return r
 
 
@@ -371,7 +407,8 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
 
     out = _create(container, "nullTOP", name, x + 360, y)
     _connect(comp, out)
-    try:
+    _set_res(out)          # every scene leaves at the master size (upscales
+    try:                   # the 256^2 Ising lattice / 320^2 RD state cleanly)
         out.viewer = True
     except Exception:
         pass
@@ -428,13 +465,11 @@ def _mass_hud(container, scene_top, x=1040, y=0):
             pass
 
     hud = _create(container, "scriptTOP", "mass_hud", x, y + 150)
-    _setpar(hud, "resolutionw", 1280)
-    _setpar(hud, "resolutionh", 720)
+    _set_res(hud)          # the callback draws at the TOP's own width/height
     _install_callbacks(hud, "mass_hud_top.py")
 
     title = _create(container, "textTOP", "mass_title", x, y + 320)
-    _setpar(title, "resolutionw", 1280)
-    _setpar(title, "resolutionh", 720)
+    _set_res(title)
     _setpar(title, "text",
             "DIMUON INVARIANT MASS  [GeV]      peaks L>R:  J/psi   Upsilon   Z")
     _setpar(title, "fontsizex", 26)
@@ -463,6 +498,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
 
     out = _create(container, "nullTOP", "out", x + 700, y)
     _connect(over, out)
+    _set_res(out)
     try:
         out.viewer = True
     except Exception:
@@ -477,8 +513,7 @@ def build_ising(dest=None, name="ising"):
     dest = dest or op("/")  # noqa: F821
     c = _create(dest, "baseCOMP", name)
     sim = _create(c, "scriptTOP", "sim", -300, 0)
-    _setpar(sim, "resolutionw", 256)
-    _setpar(sim, "resolutionh", 256)
+    _set_res(sim, 256, 256)     # the lattice size; copyNumpyArray resizes to match
     _install_callbacks(sim, "ising_top.py")
     out = _glow(c, sim, size=6.0, x=-40, y=0)
     _cook_driver(c, sim)
@@ -1184,8 +1219,7 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     res = 320
 
     state = _create(c, "glslTOP", "rd_state", -200, 0)
-    _setpar(state, "resolutionw", res)
-    _setpar(state, "resolutionh", res)
+    _set_res(state, res, res)
     _setpar(state, "format", "rgba32float")
     _setpar(state, "pixeldat", _shader_dat(c, "rd_state_src", "reaction_diffusion.frag", -200, 150))
 
@@ -1221,6 +1255,7 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
 
     color = _create(c, "glslTOP", "rd_color", 20, 0)
     _connect(state, color, 0)
+    _set_res(color)        # colourise at output size; the state is sampled by uv
     _setpar(color, "pixeldat", _shader_dat(c, "rd_color_src", "rd_color.frag", 20, 150))
     _glsl_uniforms(color, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
@@ -1252,8 +1287,7 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
         page.appendPulse("Reseed", label="New Form")
 
     sdf = _create(c, "glslTOP", "sdf", -120, 0)
-    _setpar(sdf, "resolutionw", 1280)
-    _setpar(sdf, "resolutionh", 720)
+    _set_res(sdf)
     _setpar(sdf, "pixeldat", _shader_dat(c, "sdf_src", "raymarch.frag", -120, 160))
     _glsl_uniforms(sdf, [
         ("uTime", "absTime.seconds"),
@@ -1278,8 +1312,7 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
         return src
     rex = _react_exprs(reactor)
     ov = _create(container, "glslTOP", name + "_glsl", x, y - 160)
-    _setpar(ov, "resolutionw", 1280)
-    _setpar(ov, "resolutionh", 720)
+    _set_res(ov)
     _setpar(ov, "pixeldat", _shader_dat(container, name + "_src", "waveform_tunnel.frag", x, y - 320))
     _connect(reactor.op("wave_tex"), ov, 0)
     _connect(reactor.op("spec_tex"), ov, 1)
@@ -1306,6 +1339,7 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     post = _create(container, "glslTOP", name, x, y)
     _setpar(post, "pixeldat", _shader_dat(container, name + "_src", "post_fx.frag", x, y - 170))
     _connect(src, post, 0)
+    _set_res(post)         # the master output is always MASTER_RES
     _glsl_uniforms(post, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
         ("uBeat", rex["beat"]), ("uHigh", rex["high"]), ("uBar", tex["bar"]),
@@ -1469,13 +1503,7 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
             sph.render = sph.display = True
         except Exception:
             pass
-        _setpar(geo, "instancing", True)
-        _setpar(geo, "instanceop", sim)
-        for p, ch in (("instancetx", "c0"), ("instancety", "c1"), ("instancetz", "c2"),
-                      ("instancesx", "c6"), ("instancesy", "c6"), ("instancesz", "c6"),
-                      ("instancer", "c3"), ("instanceg", "c4"), ("instanceb", "c5")):
-            _setpar(geo, p, ch)
-        _setpar(geo, "instancecolormode", "mult")
+        _instance_channels(geo, sim)
         built_pops = False
 
     # Compiled glow material + 3-point lighting (shared by both paths).
@@ -1534,13 +1562,7 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
         sph.render = sph.display = True
     except Exception:
         pass
-    _setpar(geo, "instancing", True)
-    _setpar(geo, "instanceop", sim)
-    for p, ch in (("instancetx", "c0"), ("instancety", "c1"), ("instancetz", "c2"),
-                  ("instancesx", "c6"), ("instancesy", "c6"), ("instancesz", "c6"),
-                  ("instancer", "c3"), ("instanceg", "c4"), ("instanceb", "c5")):
-        _setpar(geo, p, ch)
-    _setpar(geo, "instancecolormode", "mult")
+    _instance_channels(geo, sim)
 
     mat = _glow_mat(c, reactor)
     _setpar(geo, "material", mat)
