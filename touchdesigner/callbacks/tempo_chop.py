@@ -20,8 +20,6 @@ if not _REPO:
 if _REPO and _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-import numpy as np  # noqa: F401  (kept for parity with the other callbacks)
-
 from physics.audio import TempoClock
 
 _STATE = {}

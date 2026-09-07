@@ -60,7 +60,9 @@ if [ "${PHYSICSVJ_NO_PULL:-}" != "1" ] && [ -z "${PHYSICSVJ_REEXEC:-}" ]; then
     args=()
     [ "$CHECK" = 1 ] && args+=(--check)
     [ -n "$SCENE" ] && args+=(--scene "$SCENE")
-    PHYSICSVJ_REEXEC=1 exec "$0" "${args[@]}"
+    # ${args[@]+"${args[@]}"}: an empty array under 'set -u' is an error on the
+    # bash 3.2 that macOS ships; this idiom expands to nothing instead.
+    PHYSICSVJ_REEXEC=1 exec "$0" ${args[@]+"${args[@]}"}
   fi
 fi
 

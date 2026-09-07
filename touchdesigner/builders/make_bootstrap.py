@@ -73,6 +73,8 @@ try:
 except Exception as e:
     print("[make_bootstrap] could not save .toe:", e)
 
-# Build now as well, so this session shows the result immediately.
+# Build now as well, so this session shows the result immediately. (If you
+# later save this project, the built show goes into the .toe too; harmless,
+# every launch destroys and rebuilds it anyway -- it just opens slower.)
 from touchdesigner import startup
 startup.run(root)

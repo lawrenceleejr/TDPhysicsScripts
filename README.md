@@ -1,5 +1,7 @@
 # TDPhysicsScripts
 
+[![tests](https://github.com/lawrenceleejr/TDPhysicsScripts/actions/workflows/ci.yml/badge.svg)](https://github.com/lawrenceleejr/TDPhysicsScripts/actions/workflows/ci.yml)
+
 A library of **live physics simulations for [TouchDesigner](https://derivative.ca)** —
 built for VJ / DJ sets. Everything is dark-background, neon, glowing, and
 designed so you can **pre-build every scene and flip between them instantly**.
@@ -62,7 +64,8 @@ install** to use these scripts inside TD.
 
 1. **Clone the repo** somewhere on the machine running TouchDesigner:
    ```bash
-   git clone <this-repo> TDPhysicsScripts
+   git clone https://github.com/lawrenceleejr/TDPhysicsScripts.git
+   cd TDPhysicsScripts && pip install -r requirements-dev.txt && pytest -q   # optional: check the maths on this machine
    ```
 2. **One time, in TouchDesigner:** create a Text DAT, set its *File* to
    `touchdesigner/builders/make_bootstrap.py`, turn *Sync to File* on, and
@@ -288,7 +291,7 @@ cost (numpy, single core, including the colour pass the callback does):
 | Soft Body | 6 000 particles | ~2 ms | unconditionally-stable position-based shape matching |
 | LHC / Open Data | — | ~0 ms | only rebuilds geometry while the tracks grow, and only when a new point would appear |
 | Feynman | 615 lines / 12.5k points | ~1 ms | geometry built once; per frame is one numpy pass over the points |
-| Bohmian H | 20 000 electrons, 2 substeps | ~7 ms | analytic Bohmian velocity (one wavefunction pass per substep); 3d/superpositions cost a little more |
+| Bohmian H | 20 000 electrons, 2 substeps | ~7 ms | analytic Bohmian velocity (one wavefunction pass per substep); superpositions cost a little more. Changing orbital re-samples the cloud, a one-off ~0.25 s |
 | React-Diff / SDF | GPU | — | feedback / raymarch GLSL TOPs; cost is on the GPU |
 | POP Storm | GPU | — | POPs on the GPU (Flow fallback on builds without POPs) |
 
