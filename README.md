@@ -41,11 +41,13 @@ parameterised, good-looking component.
 ### Built for live performance
 
 * **Pre-built scenes, instant switching.** `build_all()` creates a `PhysicsVJ`
-  component with all six scenes side-by-side and a `Scene` selector. Switching
-  is just a parameter change — no rebuild, no hitch.
+  component with all eleven scenes side-by-side and a `Scene` selector.
+  Switching is just a parameter change — no rebuild, no hitch.
 * **Only the visible scene cooks.** Each scene has an `Active` flag and a
-  frame-start cook driver; idle scenes cost ~0 CPU. Flip **`Freerun All`** on
-  to evolve every scene simultaneously when you want true parallelism.
+  frame-start cook driver; idle scenes cost ~0 CPU. The armed deck-B scene is
+  free too until you actually start the crossfade (an idle deck points at the
+  live scene, so nothing renders twice). Flip **`Freerun All`** on to evolve
+  every scene simultaneously when you want true parallelism.
 * **Fast GPU handoff.** All simulation → GPU transfer uses `copyNumpyArray`
   (~0.03 ms/frame), and the heavy solvers are vectorised for 60 fps at sane
   particle counts (see [Performance](#performance)).
@@ -54,64 +56,78 @@ parameterised, good-looking component.
 
 ## Quick start
 
-**Requirements:** TouchDesigner 2022+ (ships its own Python 3.11 + numpy — no
-install needed to *use* these scripts).
+**Requirements:** TouchDesigner 2022+ on macOS or Windows. TD ships its own
+Python (3.9 in 2022, 3.11 from 2023) with numpy — there is **nothing to
+install** to use these scripts inside TD.
 
 1. **Clone the repo** somewhere on the machine running TouchDesigner:
    ```bash
    git clone <this-repo> TDPhysicsScripts
    ```
-2. *(Optional)* **Export more Feynman fields** — six ship with the repo, and
-   the generator behind the poster they come from is included:
-   ```bash
-   node data/feynman/export_field.mjs --w 2560 --h 1080 --seed 3
-   ```
-   It refuses to write a field with an illegal vertex in it. To look at one
-   without opening TouchDesigner:
-   ```bash
-   python3 data/feynman/preview.py --frames 6 --every 75
-   ```
-3. *(Optional)* **Download real LHC data** for the Open Data scene:
-   ```bash
-   python3 data/fetch_opendata.py
-   ```
-   If you skip this, the scene uses the bundled synthetic sample (which still
-   shows the J/ψ, Υ and Z peaks).
-4. **In TouchDesigner**, create a **Text DAT** and paste:
-   ```python
-   import sys
-   sys.path.insert(0, r"/full/path/to/TDPhysicsScripts")   # <-- edit this
-   from touchdesigner import td_build
-   td_build.build_all(op('/'))
-   ```
-   Right-click the DAT → **Run**. A `PhysicsVJ` component appears.
-5. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
-   mode), and change the **`Scene`** parameter to switch visuals — or set
-   **`Nextscene`** and ride **`Crossfade`** to blend between two.
-
-> Prefer not to edit paths? Set the environment variable
-> `TD_PHYSICS_REPO=/full/path/to/TDPhysicsScripts` and use the ready-made
-> launchers in `touchdesigner/builders/` — load one into a Text DAT, turn on
-> *Sync to File*, and Run. They auto-locate the repo.
-
-### Command-line workflow (no copy-paste loop)
-
-A `.toe` is a binary only TouchDesigner can write, so there's a **one-time**
-in-app step; after that, rebuilding is a single shell command.
-
-1. **Once:** in TouchDesigner, run `touchdesigner/builders/make_bootstrap.py`
-   in a Text DAT. It adds an Execute DAT that builds the show on every launch
-   and saves `physicsvj.toe` at the repo root.
-2. **From then on**, from a terminal:
+2. **One time, in TouchDesigner:** create a Text DAT, set its *File* to
+   `touchdesigner/builders/make_bootstrap.py`, turn *Sync to File* on, and
+   right-click → **Run**. That builds the whole show now *and* saves a tiny
+   `physicsvj.toe` at the repo root whose only job is to rebuild the show from
+   the current files every time it opens.
+3. **From then on, from a terminal:**
    ```bash
    ./tools/run_td.sh           # git pull, open TD, rebuild from latest files
    ./tools/run_td.sh --check   # pull, rebuild headless, print build_report.txt, quit
    ```
-   Each launch is a fresh process, so it always picks up the newest code — no
-   module-cache dance. `--check` writes/prints **`build_report.txt`** (TD version,
-   the `[td_build]` log, and every operator error) — paste that one report when
-   something looks off and it pinpoints the exact node. Override the TD binary
-   with `TOUCHDESIGNER_APP=...` if it's not at the default macOS path.
+4. Open `PhysicsVJ`, view its **`out`** TOP (drag to a viewer or go to Perform
+   mode), and change the **`Scene`** parameter to switch visuals — or set
+   **`Nextscene`** and ride **`Crossfade`** to blend between two.
+
+Prefer to skip the launcher? Paste this into a Text DAT and Run it:
+```python
+import sys
+sys.path.insert(0, r"/full/path/to/TDPhysicsScripts")   # <-- edit this
+from touchdesigner import td_build
+td_build.build_all(op('/'))
+```
+Or set the environment variable `TD_PHYSICS_REPO=/full/path/to/TDPhysicsScripts`
+and use any launcher in `touchdesigner/builders/` (load into a Text DAT, turn
+on *Sync to File*, Run) — they auto-locate the repo.
+
+**Optional extras**
+
+* **Real LHC data** for the Open Data scene (otherwise the bundled synthetic
+  sample is used, which still shows the J/ψ, Υ and Z peaks):
+  ```bash
+  python3 data/fetch_opendata.py
+  ```
+* **More Feynman fields** — six ship with the repo; the generator behind the
+  poster they come from is included and refuses to write a field with an
+  illegal vertex in it. Preview one without opening TouchDesigner:
+  ```bash
+  node data/feynman/export_field.mjs --w 2560 --h 1080 --seed 3
+  python3 data/feynman/preview.py --frames 6 --every 75
+  ```
+
+### Command-line workflow
+
+A `.toe` is a binary only TouchDesigner can write, so step 2 above is the one
+in-app step; after that, rebuilding is a single shell command and every launch
+is a fresh process, so it always picks up the newest code — no module-cache
+dance.
+
+```bash
+./tools/run_td.sh                    # open TD with the full show
+./tools/run_td.sh --check            # headless: build, write + print build_report.txt, quit
+./tools/run_td.sh --scene nbody      # build just one scene (any td_build.build_<name>)
+./tools/run_td.sh --check --scene feynman
+```
+
+`--check` writes **`build_report.txt`** (TD version, the `[td_build]` log, and
+every operator error or warning) and exits **0** if the build finished
+cleanly, **2** if it raised or stalled, **3** if TD never ran the bootstrap —
+so it works from a script or a pre-show checklist. Paste that one report when
+something looks off and it pinpoints the exact node.
+
+The launcher finds TouchDesigner in `/Applications` on macOS and under
+`Program Files\Derivative` when run from Git Bash on Windows; override with
+`TOUCHDESIGNER_APP=/path/to/binary`. `PHYSICSVJ_NO_PULL=1` skips the
+`git pull`.
 
 To build a single scene instead of all of them:
 ```python
@@ -238,13 +254,13 @@ parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`
 
 | Control | Does |
 |---------|------|
-| **8×8 grid** | Columns 0–7 = the first eight scenes, rows 0–6 = the seven palettes. Press a pad to **instant-cut** to that scene *and* set its palette. Pads glow in each palette's signature colour; the live scene's column is bright and its active-palette pad **pulses**. |
+| **8×8 grid** | Columns 0–7 = the first eight scenes, rows 0–7 = the eight palettes. Press a pad to **instant-cut** to that scene *and* set its palette. Pads glow in each palette's signature colour; the live scene's column is bright and its active-palette pad **pulses**. |
 | **Track buttons 1–6** (below grid) | Arm a scene onto **deck B** (`Nextscene`) — the armed one blinks. |
 | **Track button 7** | **Cut** — commit the crossfade B→A (lit while a fade is in progress). |
 | **Track button 8** | **Freerun All** toggle (lit while on). |
 | **Scene button 1** (top-right) | **Reset** the controller — re-handshake and repaint every LED. |
 | **Scene button 2** | **Re-fire** the live scene (new collision / next event / reseed). |
-| **Scene buttons 3–4** | Launch scenes past the 8-wide grid (**POP Storm** = 8, **Bohmian H** = 9). |
+| **Scene buttons 3–5** | Launch the scenes past the 8-wide grid (**POP Storm** = 8, **Bohmian H** = 9, **Feynman** = 10). |
 | **Master fader (9)** | **Crossfade** A/B. |
 | **Faders 1 / 2 / 3** | Live scene **Trail / Orbit / Point Size**. Faders 4–8 are free. |
 
@@ -252,26 +268,29 @@ parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`
 their LEDs drift out of sync if the show is also driven from the mouse. The
 top-right **Reset** pad (and the `Reset` parameter) blanks every LED and
 repaints the full state in one shot — your safety net mid-set. Changing the
-`Device` id re-routes MIDI and resyncs automatically.
+`Device` id re-routes MIDI and resyncs automatically. In normal use LEDs are
+sent *by difference* (only pads whose state changed), so riding a fader costs
+a couple of MIDI messages a frame rather than ninety.
 
 ---
 
 ## Performance
 
 Defaults target 60 fps for a single active scene on a modern GPU. Tune the
-`Count`/`Bodies`/`Particles` parameters if needed. Measured solver cost
-(numpy, single core):
+`Count`/`Bodies`/`Particles` parameters if needed. Measured per-frame solver
+cost (numpy, single core, including the colour pass the callback does):
 
-| Scene | Default size | ~Solver cost | Notes |
+| Scene | Default size | ~Cost / frame | Notes |
 |-------|-------------|-------------|-------|
-| Ising | 256² | ~2 ms | 512² ≈ 8 ms |
-| N-Body | 600 bodies | ~12 ms | O(N²); 400–700 is the sweet spot. Softening raised to 0.12/0.15 so mergers stay stable for a whole set |
-| Flow | 20 000 particles | ~9 ms | grid-accelerated curl noise; the field rebuilds every other frame |
+| Ising | 256² | ~1.8 ms | 512² ≈ 8.6 ms. Metropolis acceptance is a 9-entry table, no `exp` over the lattice |
+| N-Body | 600 bodies | ~5.6 ms | O(N²) via a Gram matrix + BLAS matmul; 1000 bodies ≈ 14 ms. Softening 0.12–0.15 keeps mergers stable for a whole set |
+| Flow | 20 000 particles | ~7 ms | grid-accelerated curl noise; the field rebuilds every other frame |
 | Soft Body | 6 000 particles | ~2 ms | unconditionally-stable position-based shape matching |
-| LHC / Open Data | — | ~0 ms | only rebuilds geometry during the grow reveal |
+| LHC / Open Data | — | ~0 ms | only rebuilds geometry while the tracks grow, and only when a new point would appear |
 | Feynman | 615 lines / 12.5k points | ~1 ms | geometry built once; per frame is one numpy pass over the points |
+| Bohmian H | 20 000 electrons, 2 substeps | ~7 ms | analytic Bohmian velocity (one wavefunction pass per substep); 3d/superpositions cost a little more |
 | React-Diff / SDF | GPU | — | feedback / raymarch GLSL TOPs; cost is on the GPU |
-| POP Storm / Bohmian H | GPU / CPU-seeded | — | POPs on the GPU; Bohmian electrons integrated on CPU (~1.8 ms/20k) |
+| POP Storm | GPU | — | POPs on the GPU (Flow fallback on builds without POPs) |
 
 Because only the active scene cooks, running all eleven in parallel is free until
 you turn on `Freerun All` or crossfade between scenes.
@@ -288,13 +307,24 @@ ambient occlusion so the forms read as sculpted, not flat.
 
 ## Testing
 
-The physics cores are covered by a numpy-only test suite (conservation laws,
-divergence-free flow, resonance peaks, etc.):
+Two gates, one for each half of the project:
+
+**Outside TouchDesigner** — the physics cores are covered by a numpy-only test
+suite (conservation laws, divergence-free flow, resonance peaks, every kernel
+checked against the formulation it replaced), and the TouchDesigner layer is
+checked statically: every callback and shader the builder refers to exists,
+the APC controller's scene table matches `build_all`, and the controller's
+button/fader logic runs against a stub of the TD API. GitHub Actions runs it
+on Python 3.9 and 3.11 (the two Pythons TD ships) on every push.
 
 ```bash
 pip install -r requirements-dev.txt
 pytest -q
 ```
+
+**Inside TouchDesigner** — `./tools/run_td.sh --check` builds the show
+headless and prints `build_report.txt` with every operator error. Run it after
+pulling, before a show.
 
 ---
 

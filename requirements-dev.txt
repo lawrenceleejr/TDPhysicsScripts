@@ -1,5 +1,7 @@
 # Development / testing only. TouchDesigner ships its own Python + numpy, so
 # you do NOT need to install anything to use these scripts inside TD.
-# These are for running the test suite outside TouchDesigner.
+# These are for running the test suite (and data/feynman/preview.py) outside
+# TouchDesigner.
 numpy>=1.23
 pytest>=7.0
+pillow>=9.0      # data/feynman/preview.py renders a field to PNG

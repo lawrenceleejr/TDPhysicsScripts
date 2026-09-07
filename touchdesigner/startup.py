@@ -40,11 +40,15 @@ class _Tee:
                 pass
 
 
-def _collect_errors(root):
+def _collect_errors(root, names=("PhysicsVJ", "APCShow")):
     out = []
     try:
-        vj = root.op("PhysicsVJ")
-        kids = vj.findChildren(maxDepth=20) if vj is not None else []
+        kids = []
+        for name in names:
+            comp = root.op(name)
+            if comp is not None:
+                kids.append(comp)
+                kids.extend(comp.findChildren(maxDepth=20))
         for o in kids:
             try:
                 e = o.errors()
@@ -74,10 +78,18 @@ def _quit():
             continue
 
 
-def run(root, build="all"):
+def run(root, build=None):
     """Build the show under ``root``; stream a report to build_report.txt.
-    Quits TD afterward if PHYSICSVJ_QUIT is set (the --check path)."""
+
+    ``build`` is "all" (the whole show) or one scene's builder suffix, e.g.
+    "nbody" for ``td_build.build_nbody``. When not given it comes from the
+    PHYSICSVJ_BUILD environment variable (``run_td.sh --scene nbody`` sets it)
+    and defaults to "all". Quits TD afterward if PHYSICSVJ_QUIT is set (the
+    --check path)."""
     from touchdesigner import td_build
+
+    if build is None:
+        build = os.environ.get("PHYSICSVJ_BUILD", "").strip() or "all"
 
     repo = td_build.REPO
     path = os.path.join(repo, "build_report.txt")
@@ -87,7 +99,7 @@ def run(root, build="all"):
         f.write("TD version: %s   build: %s\n" % (app.version, app.build))  # noqa: F821
     except Exception:
         f.write("TD version: (unknown)\n")
-    f.write("repo: %s\n\n== [td_build] log ==\n" % repo)
+    f.write("repo: %s\nbuild: %s\n\n== [td_build] log ==\n" % (repo, build))
     f.flush()
 
     base = None
@@ -97,12 +109,18 @@ def run(root, build="all"):
             if build == "all":
                 base = td_build.build_all(root)
             else:
-                base = getattr(td_build, "build_" + build)(root)
+                builder = getattr(td_build, "build_" + build, None)
+                if builder is None:
+                    names = sorted(n[6:] for n in dir(td_build) if n.startswith("build_"))
+                    raise ValueError("no builder 'build_%s'; choose one of: %s"
+                                     % (build, ", ".join(names)))
+                base = builder(root)
     except Exception:
         f.write("\n== BUILD RAISED ==\n" + traceback.format_exc() + "\n")
 
     f.write("\n== operator errors / warnings ==\n")
-    f.write(_collect_errors(root) + "\n")
+    names = ("PhysicsVJ", "APCShow") if build == "all" else ((base.name,) if base is not None else ())
+    f.write(_collect_errors(root, names) + "\n")
     f.write("== END ==\n")
     f.flush()
     try:

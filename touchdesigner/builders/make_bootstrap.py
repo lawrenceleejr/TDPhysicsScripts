@@ -62,11 +62,9 @@ try:
 except Exception as e:
     print("[make_bootstrap] could not set Execute DAT flags:", e)
 
-# Build once now so this session shows it too.
-from touchdesigner import startup
-startup.run(root)
-
-# Save the reusable bootstrap .toe at the repo root.
+# Save the bootstrap .toe *before* building, so it holds only this Execute DAT.
+# Every launch rebuilds from the files on disk anyway; saving a fully built show
+# into it would just make each launch load a large network and then destroy it.
 toe = os.path.join(REPO, "physicsvj.toe")
 try:
     project.save(toe)
@@ -74,3 +72,7 @@ try:
     print("[make_bootstrap] from now on:  ./tools/run_td.sh   (or --check)")
 except Exception as e:
     print("[make_bootstrap] could not save .toe:", e)
+
+# Build now as well, so this session shows the result immediately.
+from touchdesigner import startup
+startup.run(root)

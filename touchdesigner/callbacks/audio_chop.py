@@ -33,6 +33,29 @@ def _p(o, name, default):
         return default
 
 
+def _fps(scriptOp):
+    """The frame rate this op runs at (its Time COMP), never below 1."""
+    try:
+        return max(float(scriptOp.time.rate), 1.0)
+    except Exception:
+        return 60.0
+
+
+def _emit(scriptOp, vals):
+    """Write one named, single-sample channel per entry of ``vals``.
+
+    appendChan is the documented Script CHOP way to get *named* channels;
+    copyNumpyArray only ever names them <base>0, <base>1, ... and every
+    expression downstream reads these by name (op('Reactor/analyze')['bass']).
+    Six scalars, so the per-channel calls cost nothing measurable.
+    """
+    scriptOp.clear()
+    scriptOp.numSamples = 1
+    for name in _CHANNELS:
+        ch = scriptOp.appendChan(name)
+        ch[0] = float(vals.get(name, 0.0))
+
+
 def onSetupParameters(scriptOp):
     if hasattr(scriptOp.par, "Attack"):
         return  # idempotent
@@ -99,7 +122,7 @@ def onCook(scriptOp):
     feats = analyzer.analyze(x)
 
     frame = absTime.frame  # noqa: F821 (TD global)
-    dt = 1.0 / float(max(getattr(me.time, "rate", 60.0), 1.0))  # noqa: F821
+    dt = 1.0 / _fps(scriptOp)
     if st.get("last_frame") != frame:
         is_beat = bt.update(feats["bass"], dt)
         st["flash"] = 1.0 if is_beat else max(0.0, st.get("flash", 0.0) - dt * 6.0)
@@ -110,14 +133,7 @@ def onCook(scriptOp):
         "level": feats["level"], "beat": st.get("flash", 0.0),
         "bpm": bt.bpm if bt.bpm > 0 else 0.0,
     }
-    out = np.array([[vals[c]] for c in _CHANNELS], dtype=np.float32)
-    scriptOp.clear()
-    scriptOp.copyNumpyArray(np.ascontiguousarray(out))
-    for i, name in enumerate(_CHANNELS):
-        try:
-            scriptOp[i].name = name
-        except Exception:
-            pass
+    _emit(scriptOp, vals)
 
 
 setupParameters = onSetupParameters

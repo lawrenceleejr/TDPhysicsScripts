@@ -151,13 +151,27 @@ Two **Switch TOP** "decks" each pick a scene `out` (deck A driven by the
 `Scene` menu, deck B by `Nextscene`), and a **Cross TOP** blends them by the
 `Crossfade` parameter (`cross = 0` shows A, `1` shows B). A **Parameter Execute
 DAT** watches the `Cut` pulse and commits a transition (copies B→A, resets the
-fader). Each scene's `Active` is true only while its deck contributes:
+fader).
+
+A Cross TOP cooks *both* inputs every frame, so a deck that contributes nothing
+to the mix must not point at a different scene or that scene's whole render
+chain (render, trails, bloom — or a raymarch) runs for nothing. The deck index
+expressions therefore fall back to the other deck's scene:
+
+```
+deck_a.index = Scene     if Crossfade < 1 else Nextscene
+deck_b.index = Nextscene if Crossfade > 0 else Scene
+```
+
+TouchDesigner cooks a node once per frame however many things pull it, so in
+steady state the idle deck is free. Each scene's `Active` uses the same rule:
 
 ```
 (Scene==i and Crossfade<1) or (Nextscene==i and Crossfade>0) or FreerunAll
 ```
 
-so a single sim runs in steady state and both run only mid-fade. For a plain
+so a single sim runs (and a single scene renders) in steady state, and both
+only mid-fade. For a plain
 instant-only switcher, drop deck B + the Cross TOP and drive one Switch TOP's
 `index` from `Scene`.
 
@@ -181,9 +195,20 @@ and three small operators call into it:
   (so mouse and MIDI stay in sync), and `selfwatch` catches the surface's own
   `Reset` pulse and `Device` changes.
 
-**Reset** (`apc_mini.reset`) blanks every LED, then repaints — the recovery
-path for a controller that powered on dark, was hot-plugged, or drifted out of
-sync. `build_all(apc=True)` (the default) wires this in pointing at the show.
+LEDs are sent **by difference**: `repaint` remembers what every pad was last
+told (per surface, in `_LED_STATE`) and only re-sends pads whose state changed,
+so the `statewatch` firing on every `Crossfade` tick during a fade costs one or
+two messages, not the ninety a full repaint would. **Reset** (`apc_mini.reset`)
+forgets that memory, blanks every LED unconditionally, then repaints — the
+recovery path for a controller that powered on dark, was hot-plugged, or
+drifted out of sync. `build_all(apc=True)` (the default) wires this in pointing
+at the show.
+
+The track buttons are checked transport-first (`Cut`, `Freerun`) and only then
+as arm buttons for scenes 0–5; `tests/test_td_contracts.py` drives the whole
+control map against a stub of the TD API, because the one bug this surface has
+had (Cut and Freerun arming scenes 6 and 7 once the grid grew to eight
+columns) was exactly the kind a static parse cannot see.
 
 The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
 palette→colour map) are constants at the top of `apc_mini.py` — re-map the
@@ -220,7 +245,12 @@ hot-swappable assets + a thin, defensive TD adapter.
   `build_bohmian`).** Hydrogen eigenstates `psi_{nlm}=R_{nl}Y_l^m` (generalised
   Laguerre + associated Legendre recurrences, atomic units), time-dependent
   superpositions, and the de Broglie-Bohm guidance velocity
-  `v = Im(grad psi / psi)` (complex finite-difference gradient). The Script CHOP
+  `v = Im(grad psi / psi)`. The gradient is analytic — d/dr, d/dθ, d/dφ of
+  `R_nl Y_lm` in spherical components, with `Im(grad psi · conj psi)` taken
+  per component so the change to Cartesian is real arithmetic — which makes a
+  velocity evaluation one wavefunction pass instead of the seven a central
+  finite-difference stencil needs; that stencil is kept as `bohm_velocity_fd`
+  and the test suite holds the two to 1e-6. The Script CHOP
   seeds electrons by rejection-sampling `|psi|^2`, integrates them along `v`
   (small fixed step, a few substeps), recycles a fraction each frame to stay
   crisp, and colours by speed. Verified in `tests/test_hydrogen.py`: 1s is
@@ -250,6 +280,15 @@ build. Glance at these:
    text. The manual-BPM path always works regardless.
 4. **`audiodeviceinCHOP` / `choptopTOP` / `audiospectrumCHOP`** device + param
    names on the Reactor.
+5. **Named CHOP channels.** The Reactor and Tempo Script CHOPs emit their
+   channels with `appendChan` (the documented way to *name* Script CHOP
+   channels), because every binding downstream reads them by name
+   (`op('Reactor/analyze')['bass']`). If a build ever lacks `appendChan`, the
+   channels would come out as `chan0..`, and the audio bindings read 0.
+6. **Execute DAT frame-start flag.** The cook drivers set `framestart` (with
+   `fs` as a fallback spelling). If neither exists on a build, the visible
+   scene still animates — TD pulls its Script OP every frame through the
+   render — but hidden scenes under `Freerun All` would not advance.
 
 ## Going further
 

@@ -112,7 +112,10 @@ def onCook(scriptOp):
                 st["t"] += _DT
             # Respawn a fraction (keeps the cloud crisp + alive under trails)
             # and recycle any electron that wandered well outside the orbital.
-            rate = 1.0 / float(max(getattr(me.time, "rate", 60.0), 1.0))  # noqa: F821
+            try:
+                rate = 1.0 / max(float(scriptOp.time.rate), 1.0)
+            except Exception:
+                rate = 1.0 / 60.0
             frac = min(max(refresh * rate, 0.0), 1.0)
             far = np.linalg.norm(pos, axis=1) > st["extent"] * 1.4
             pick = st["rng"].random(pos.shape[0]) < frac
