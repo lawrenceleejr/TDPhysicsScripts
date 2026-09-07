@@ -398,12 +398,14 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     _setpar(black, "colorg", 0.0)
     _setpar(black, "colorb", 0.0)
     _setpar(black, "alpha", 1.0)
+    _set_res(black)        # a Constant TOP is 256x256 unless told otherwise
 
     comp = _create(container, "compositeTOP", name + "_glow", x + 180, y)
     _setpar(comp, "operand", "add")
     _connect(src, comp, 0)
     _connect(blur, comp, 1)
     _connect(black, comp, 2)
+    _set_res(comp)         # never let a smaller input decide the output size
 
     out = _create(container, "nullTOP", name, x + 360, y)
     _connect(comp, out)
@@ -433,7 +435,13 @@ def _trails(container, src, name="trail", amount=0.0, x=300, y=200):
         except Exception:
             pass
 
+    # The standard loop: the live frame goes INTO the Feedback TOP (that input
+    # is what it shows on reset and, crucially, what sets its resolution -- an
+    # unwired Feedback TOP is 256x256 and dragged the whole trail composite
+    # down to a square thumbnail), the Feedback's target is the composite.
     fb = _create(container, "feedbackTOP", name + "_fb", x, y - 150)
+    _connect(src, fb, 0)
+    _set_res(fb)
     decay = _create(container, "levelTOP", name + "_decay", x + 150, y - 150)
     _connect(fb, decay)
     _expr(decay, "opacity", "parent().par.Trail")
@@ -442,6 +450,7 @@ def _trails(container, src, name="trail", amount=0.0, x=300, y=200):
     _setpar(comp, "operand", "over")      # live frame over the fading history
     _connect(src, comp, 0)
     _connect(decay, comp, 1)
+    _set_res(comp)
     _setpar(fb, "top", comp)              # feed back the composite's last frame
     return comp
 
@@ -486,6 +495,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _setpar(label, "operand", "over")
     _connect(title, label, 0)
     _connect(hud, label, 1)
+    _set_res(label)
 
     level = _create(container, "levelTOP", "hud_level", x + 340, y + 150)
     _connect(label, level)
@@ -495,6 +505,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _setpar(over, "operand", "over")
     _connect(level, over, 0)              # HUD on top
     _connect(scene_top, over, 1)          # live scene behind
+    _set_res(over)
 
     out = _create(container, "nullTOP", "out", x + 700, y)
     _connect(over, out)
@@ -921,6 +932,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     fxpage.appendFloat("Rgbshift", label="RGB Shift (px)")[0].val = 1.5
     fxpage.appendFloat("Punch", label="Beat Punch")[0].val = 1.0
     fxpage.appendToggle("Wavevis", label="Waveform Overlay")[0].val = False
+    fxpage.appendToggle("Fx", label="Post FX (off = raw mix)")[0].val = True
     for pn, mx in (("Kaleido", 1.0), ("Rgbshift", 8.0), ("Punch", 2.0)):
         try:
             getattr(base.par, pn).normMin = 0.0
@@ -954,9 +966,9 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         # or when Freerun All is on. Keeps it to one live sim except mid-fade.
         _expr(
             scene, "Active",
-            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade < 1) "
-            f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade > 0) "
-            f"or parent().par.Freerunall)",
+            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade.eval() < 1) "
+            f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade.eval() > 0) "
+            f"or parent().par.Freerunall.eval())",
         )
         out = scene.op("out")
         if out is not None:
@@ -975,10 +987,10 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     # cooks that node once per frame, so the idle deck is free. The scenes'
     # Active flags below use the same rule, so sim and render agree.
     _expr(switch_a, "index",
-          "parent().par.Scene.menuIndex if parent().par.Crossfade < 1 "
+          "parent().par.Scene.menuIndex if parent().par.Crossfade.eval() < 1 "
           "else parent().par.Nextscene.menuIndex")
     _expr(switch_b, "index",
-          "parent().par.Nextscene.menuIndex if parent().par.Crossfade > 0 "
+          "parent().par.Nextscene.menuIndex if parent().par.Crossfade.eval() > 0 "
           "else parent().par.Scene.menuIndex")
 
     cross = _create(base, "crossTOP", "crossfade", 160, 0)
@@ -990,12 +1002,41 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     mixed = _waveform_overlay(base, cross, reactor, x=300)
     post = _post_fx(base, mixed, reactor, tempo, x=480)
 
-    final = _create(base, "nullTOP", "out", 700, 0)
-    _connect(post, final)
+    # A live show must never go black because a post shader failed to compile
+    # on some build: 'Fx' off routes the raw mix straight to 'out'.
+    bypass = _create(base, "switchTOP", "fx_bypass", 600, 0)
+    _connect(post, bypass, 0)
+    _connect(mixed, bypass, 1)
+    _expr(bypass, "index", "0 if parent().par.Fx.eval() else 1")
+
+    final = _create(base, "nullTOP", "out", 760, 0)
+    _connect(bypass, final)
+    _set_res(final)
     try:
         final.viewer = True
     except Exception:
         pass
+
+    # Pull the master chain once now. Nothing else does during a headless
+    # build, so without this a GLSL compile failure in post/overlay would
+    # never reach build_report.txt -- it would just be a black 'out' later.
+    for o in (cross, mixed, post, final):
+        try:
+            o.cook(force=True)
+        except Exception as e:
+            print(f"[td_build] cook of {o.path} raised: {e}")
+    for o in (switch_a, switch_b, cross, mixed, post, bypass, final):
+        try:
+            err = o.errors()
+            if err:
+                print(f"[td_build] {o.path}: {err.strip()}")
+        except Exception:
+            pass
+    try:
+        print(f"[td_build] master chain: deck_a -> {switch_a.inputs[int(switch_a.par.index.eval())].path}, "
+              f"out is {final.width}x{final.height}")
+    except Exception as e:
+        print(f"[td_build] master chain check failed: {e}")
 
     # Make the whole show breathe: bind scene params to the audio + tempo.
     _reactive_bindings(base, reactor, tempo)
@@ -1224,7 +1265,8 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     _setpar(state, "pixeldat", _shader_dat(c, "rd_state_src", "reaction_diffusion.frag", -200, 150))
 
     fb = _create(c, "feedbackTOP", "rd_fb", -400, 0)
-    _setpar(fb, "top", state)
+    _set_res(fb, res, res)  # same size as the state, or the loop resamples
+    _setpar(fb, "top", state)             # (and blurs) the chemistry each frame
     _connect(fb, state, 0)
 
     # Reseed: store the trigger frame; the shader's uReseed reads it for 1 frame.
@@ -1328,6 +1370,7 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
     _setpar(comp, "operand", "over")
     _connect(lvl, comp, 0)   # overlay on top
     _connect(src, comp, 1)
+    _set_res(comp)
     return comp
 
 
