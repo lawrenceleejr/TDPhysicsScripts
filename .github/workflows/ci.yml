@@ -18,11 +18,14 @@ jobs:
         # 3.9 is the Python inside TouchDesigner 2022; 3.11 is 2023 and later.
         python-version: ["3.9", "3.11"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          # The cache step looks for requirements.txt / pyproject.toml by
+          # default; this repo keeps its (dev-only) pins in requirements-dev.txt.
+          cache-dependency-path: requirements-dev.txt
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q
       - name: shell syntax
