@@ -568,6 +568,25 @@ def build_lhc(dest=None, name="lhc"):
     return c
 
 
+def _cd_channel_names(probe):
+    """The channel names a SOP to CHOP gives the Cd attribute on this build,
+    as one space-separated string in component order (r g b [a]).
+
+    Falls back to the four names the 2025 build reports if the probe yields
+    nothing (e.g. the SOP had no Cd yet) so the wiring is still well-formed.
+    """
+    names = []
+    try:
+        probe.cook(force=True)
+        names = [ch.name for ch in probe.chans() if ch.name.lower().startswith("cd")]
+    except Exception as e:
+        print(f"[td_build] Cd channel-name probe failed: {e}")
+    if len(names) < 3:
+        print(f"[td_build] Cd channel-name probe found {names!r}; using Cd_0_..Cd_3_")
+        names = ["Cd_0_", "Cd_1_", "Cd_2_", "Cd_3_"]
+    return " ".join(names[:4])
+
+
 def build_feynman(dest=None, name="feynman"):
     """The Feynman field: static linework, animated by point colour.
 
@@ -594,14 +613,25 @@ def build_feynman(dest=None, name="feynman"):
     _install_callbacks(state, "feynman_chop.py")
     _setpar(state, "Geosop", "geo/lines")   # relative to the scene, from a CHOP
 
-    # A CHOP to SOP matches channels to attributes *by name*: Cd(0)..Cd(3),
-    # the same convention SOP to CHOP emits. The Script CHOP puts out c0..c3,
-    # so a Rename CHOP gives them those names (a rename is free), and the
-    # CHOP to SOP is told exactly which channels and which attribute.
-    cd_names = "Cd(0) Cd(1) Cd(2) Cd(3)"
+    # A CHOP to SOP matches channels to attributes *by name*, and the exact
+    # names are the build's business: its warnings print them as Cd(0)..Cd(3)
+    # but channel names cannot hold parentheses (a Rename CHOP legalises them
+    # to Cd_0_). So instead of assuming, ask TD: a SOP to CHOP reading the
+    # field's own Cd attribute emits precisely the names this build uses, and
+    # the Rename CHOP gives the Script CHOP's channels those names. (Script
+    # CHOP channels are numbered from 1 on 2025 -- c1..c4 -- hence 'c*'.)
+    try:
+        lines.cook(force=True)
+    except Exception:
+        pass
+    probe = _create(c, "soptoCHOP", "cd_names", -560, -300)
+    _setpar(probe, "sop", lines)
+    _setpar_any(probe, ("attscope", "attribs", "attribute"), "Cd", quiet=True)
+    cd_names = _cd_channel_names(probe)
+
     named = _create(c, "renameCHOP", "state_cd", -400, -180)
     _connect(state, named)
-    _setpar_any(named, ("renamefrom", "from"), "c0 c1 c2 c3")
+    _setpar_any(named, ("renamefrom", "from"), "c*")
     _setpar_any(named, ("renameto", "to"), cd_names)
 
     paint = geo.create("choptoSOP", "paint")
@@ -628,7 +658,7 @@ def build_feynman(dest=None, name="feynman"):
     # geometry, then the colour channels, then the CHOP to SOP that joins them
     # (cooked earlier, before state had any channels, it reports "Channel *
     # not found" for that stale pass).
-    for o in (lines, state, named, paint):
+    for o in (lines, probe, state, named, paint):
         try:
             o.cook(force=True)
         except Exception as e:
@@ -639,7 +669,8 @@ def build_feynman(dest=None, name="feynman"):
     try:
         def chans(o):
             return " ".join(ch.name for ch in o.chans()) or "(no channels)"
-        print(f"[td_build] feynman join: state[{state.numChans}] = {chans(state)}; "
+        print(f"[td_build] feynman join: Cd channels on this build = {chans(probe)}; "
+              f"state[{state.numChans}] = {chans(state)}; "
               f"state_cd[{named.numChans}] = {chans(named)}; "
               f"paint.chop -> {paint.par.chop.eval()}; "
               f"paint warnings: {paint.warnings() or 'none'}")
@@ -982,6 +1013,16 @@ def _shader_dat(container, name, filename, x, y, prepend_common=True):
     dat = _create(container, "textDAT", name, x, y)
     dat.text = _load_shader(filename, prepend_common)
     return dat
+
+
+def _print_pars(o):
+    """List an operator's parameter names in the build log (for POP operators,
+    whose names are still settling between builds)."""
+    try:
+        names = sorted({p.name for p in o.pars() if not p.name.startswith(("node", "op", "clone"))})
+        print(f"[td_build] pars of {o.path} ({o.type}): {' '.join(names)}")
+    except Exception as e:
+        print(f"[td_build] could not list pars of {o.path}: {e}")
 
 
 def _bindexpr_any(o, names, expression):
@@ -1388,8 +1429,10 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         chain_tail = particle
         if force is not None:
             _connect(chain_tail, force, 0)
-            _bindexpr_any(force, ("force", "strength", "magnitude", "amount", "scale"),
-                          f"-2.0 - 6.0*{rex['bass']}")
+            if not _bindexpr_any(force, ("force", "strength", "magnitude", "amount", "scale"),
+                                 f"-2.0 - 6.0*{rex['bass']}"):
+                _print_pars(force)          # so the report shows the real names
+                _print_pars(particle)
             chain_tail = force
         if noise is not None:
             _connect(chain_tail, noise, 0)
