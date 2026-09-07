@@ -453,4 +453,9 @@ def test_every_explicit_resolution_sets_custom_mode():
     # resolutionw/h are set in exactly one place, _set_res, right after the mode.
     assert src.count('"resolutionw"') == 1 and src.count('"resolutionh"') == 1
     assert src.index('"outputresolution", "custom"') < src.index('"resolutionw"')
-    assert src.count("_set_res(") >= 8                  # render, glow, HUD, GLSL, post
+    assert src.count("_set_res(") >= 14                 # render, glow, trails, HUD, GLSL, post
+    # every Feedback TOP has a source on its input (an unwired one is 256x256)
+    trails = src[src.index("def _trails("):src.index("def _mass_hud(")]
+    assert "_connect(src, fb, 0)" in trails and "_set_res(fb)" in trails
+    # every composite is pinned rather than inheriting from its smallest input
+    assert src.count('"compositeTOP"') == src.count("_set_res(comp)") + src.count("_set_res(label)") + src.count("_set_res(over)")

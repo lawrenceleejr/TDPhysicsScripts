@@ -398,12 +398,14 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     _setpar(black, "colorg", 0.0)
     _setpar(black, "colorb", 0.0)
     _setpar(black, "alpha", 1.0)
+    _set_res(black)        # a Constant TOP is 256x256 unless told otherwise
 
     comp = _create(container, "compositeTOP", name + "_glow", x + 180, y)
     _setpar(comp, "operand", "add")
     _connect(src, comp, 0)
     _connect(blur, comp, 1)
     _connect(black, comp, 2)
+    _set_res(comp)         # never let a smaller input decide the output size
 
     out = _create(container, "nullTOP", name, x + 360, y)
     _connect(comp, out)
@@ -433,7 +435,13 @@ def _trails(container, src, name="trail", amount=0.0, x=300, y=200):
         except Exception:
             pass
 
+    # The standard loop: the live frame goes INTO the Feedback TOP (that input
+    # is what it shows on reset and, crucially, what sets its resolution -- an
+    # unwired Feedback TOP is 256x256 and dragged the whole trail composite
+    # down to a square thumbnail), the Feedback's target is the composite.
     fb = _create(container, "feedbackTOP", name + "_fb", x, y - 150)
+    _connect(src, fb, 0)
+    _set_res(fb)
     decay = _create(container, "levelTOP", name + "_decay", x + 150, y - 150)
     _connect(fb, decay)
     _expr(decay, "opacity", "parent().par.Trail")
@@ -442,6 +450,7 @@ def _trails(container, src, name="trail", amount=0.0, x=300, y=200):
     _setpar(comp, "operand", "over")      # live frame over the fading history
     _connect(src, comp, 0)
     _connect(decay, comp, 1)
+    _set_res(comp)
     _setpar(fb, "top", comp)              # feed back the composite's last frame
     return comp
 
@@ -486,6 +495,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _setpar(label, "operand", "over")
     _connect(title, label, 0)
     _connect(hud, label, 1)
+    _set_res(label)
 
     level = _create(container, "levelTOP", "hud_level", x + 340, y + 150)
     _connect(label, level)
@@ -495,6 +505,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _setpar(over, "operand", "over")
     _connect(level, over, 0)              # HUD on top
     _connect(scene_top, over, 1)          # live scene behind
+    _set_res(over)
 
     out = _create(container, "nullTOP", "out", x + 700, y)
     _connect(over, out)
@@ -1224,7 +1235,8 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     _setpar(state, "pixeldat", _shader_dat(c, "rd_state_src", "reaction_diffusion.frag", -200, 150))
 
     fb = _create(c, "feedbackTOP", "rd_fb", -400, 0)
-    _setpar(fb, "top", state)
+    _set_res(fb, res, res)  # same size as the state, or the loop resamples
+    _setpar(fb, "top", state)             # (and blurs) the chemistry each frame
     _connect(fb, state, 0)
 
     # Reseed: store the trigger frame; the shader's uReseed reads it for 1 frame.
@@ -1328,6 +1340,7 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
     _setpar(comp, "operand", "over")
     _connect(lvl, comp, 0)   # overlay on top
     _connect(src, comp, 1)
+    _set_res(comp)
     return comp
 
 
