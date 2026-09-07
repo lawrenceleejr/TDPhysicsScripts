@@ -66,11 +66,30 @@ def _collect_errors(root, names=("PhysicsVJ", "APCShow")):
     return "\n".join(out) if out else "(none)"
 
 
+def _td_global(name):
+    """A TouchDesigner global (app, project ...) from inside an imported module.
+
+    TD injects these into DAT scripts, not into modules they import; the
+    ``td`` module carries them. Bare names here raised NameError, which is why
+    the report said "TD version: (unknown)" and the --check run had to be
+    killed by the launcher instead of quitting itself.
+    """
+    for modname in ("td", "builtins"):
+        try:
+            val = getattr(__import__(modname), name, None)
+            if val is not None:
+                return val
+        except Exception:
+            pass
+    return None
+
+
 def _quit():
     """Quit TD, tolerating API differences across builds."""
-    for call in (lambda: project.quit(force=True),  # noqa: F821
-                 lambda: project.quit(),             # noqa: F821
-                 lambda: app.exit()):                # noqa: F821
+    project, app = _td_global("project"), _td_global("app")
+    for call in (lambda: project.quit(force=True),
+                 lambda: project.quit(),
+                 lambda: app.exit()):
         try:
             call()
             return
@@ -96,7 +115,8 @@ def run(root, build=None):
     f = open(path, "w", buffering=1)  # line-buffered: progress survives a stall
     f.write("# PhysicsVJ build report\n")
     try:
-        f.write("TD version: %s   build: %s\n" % (app.version, app.build))  # noqa: F821
+        app = _td_global("app")
+        f.write("TD version: %s   build: %s   %s\n" % (app.version, app.build, app.osName))
     except Exception:
         f.write("TD version: (unknown)\n")
     f.write("repo: %s\nbuild: %s\n\n== [td_build] log ==\n" % (repo, build))

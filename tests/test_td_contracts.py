@@ -346,3 +346,67 @@ def test_opendata_publishes_mass_on_the_scene_not_on_itself():
     assert 'scriptOp.parent().store("invariant_mass"' in sop
     assert 'scriptOp.store("invariant_mass"' not in sop
     assert 'scriptOp.parent().fetch("invariant_mass"' in hud
+
+
+# --- lessons from the second build report ---------------------------------
+class _ModeEnum:
+    """Stand-in for TD's ParMode enum: the class of a parameter's .mode value."""
+    class _M:
+        def __init__(self, name):
+            self.name = name
+
+        def __eq__(self, other):
+            return isinstance(other, _ModeEnum._M) and other.name == self.name
+
+        def __repr__(self):
+            return "ParMode." + self.name
+
+
+_ModeEnum._M.CONSTANT = _ModeEnum._M("CONSTANT")
+_ModeEnum._M.EXPRESSION = _ModeEnum._M("EXPRESSION")
+
+
+class _ExprPar:
+    def __init__(self):
+        self.expr = ""
+        self.mode = _ModeEnum._M.CONSTANT
+        self.val = 0
+
+
+def test_expressions_bind_without_a_parmode_import():
+    """On a 2025 build `from td import ParMode` came back None and every
+    expression in the show (decks, Active flags, crossfade, uniforms) went
+    unset. _expr must switch the mode using the enum class of the parameter's
+    own .mode value, with no import at all."""
+    td_build = importlib.import_module("touchdesigner.td_build")
+    assert td_build.ParMode is None            # as it is outside TD
+    o = _Op("/x")
+    o.par.tx = _ExprPar()
+    assert td_build._expr(o, "tx", "absTime.frame") is True
+    assert o.par.tx.expr == "absTime.frame"
+    assert o.par.tx.mode == _ModeEnum._M.EXPRESSION
+    assert td_build._bindexpr(o, "tx", "1+1") is True
+    assert td_build._expr(o, "nope", "1") is False
+
+
+def test_setpar_any_tries_each_spelling_once():
+    td_build = importlib.import_module("touchdesigner.td_build")
+    o = _Op("/light", pars=[("cr", 0.0)])
+    assert td_build._setpar_any(o, ("colorr", "cr"), 0.5) == "cr"
+    assert o.par.cr.val == 0.5
+    assert td_build._setpar_any(o, ("nothing", "here"), 1.0, quiet=True) is None
+
+
+def test_builder_uses_the_parameter_spellings_this_build_reported():
+    src = _src("touchdesigner", "td_build.py")
+    assert '("cr", "colorr")' in src and '("cg", "colorg")' in src and '("cb", "colorb")' in src
+    assert '("vdat", "vertexdat")' in src and '("pdat", "pixeldat")' in src
+    assert "Cd(0) Cd(1) Cd(2) Cd(3)" in src           # CHOP to SOP maps by name
+    assert '"renameCHOP"' in src
+    assert "_ensure_active(c)" in src                 # POP scene has an Active flag
+
+
+def test_startup_reads_td_globals_through_the_td_module():
+    src = _src("touchdesigner", "startup.py")
+    assert "_td_global(\"app\")" in src and "_td_global(\"project\")" in src
+    assert "app.version, app.build" in src

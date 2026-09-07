@@ -36,12 +36,42 @@ if REPO not in sys.path:
 _CALLBACK_DIR = os.path.join(REPO, "touchdesigner", "callbacks")
 
 # ``ParMode`` is a TouchDesigner enum. It is injected as a global in DAT scripts
-# but NOT into imported modules, so we must import it from the ``td`` module.
-# (Outside TD -- e.g. the test suite -- this stays None and is never used.)
+# but NOT into imported modules, and which module exposes it has moved between
+# builds (``from td import ParMode`` came back None on a 2025 build, which left
+# every expression in the show unset). So it is resolved lazily, and first of
+# all from the parameter itself: ``type(par.mode)`` *is* the enum class.
 try:
     from td import ParMode  # noqa: F401
 except Exception:
     ParMode = None
+
+
+def _td_global(name):
+    """A TouchDesigner global (op, app, project, ParMode ...) from an imported
+    module, wherever this build exposes it. None if nowhere."""
+    g = globals().get(name)
+    if g is not None:
+        return g
+    for modname in ("td", "builtins"):
+        try:
+            mod = __import__(modname)
+            val = getattr(mod, name, None)
+            if val is not None:
+                return val
+        except Exception:
+            pass
+    return None
+
+
+def _par_mode_enum(p):
+    """The ParMode enum class, taken from the parameter's own mode value."""
+    try:
+        cls = type(p.mode)
+        if hasattr(cls, "EXPRESSION"):
+            return cls
+    except Exception:
+        pass
+    return _td_global("ParMode")
 
 # Stable scene table used by build_all (label, builder, kwargs).
 SCENES = [
@@ -77,15 +107,50 @@ def _setpar(o, name, value):
         return False
 
 
-def _expr(o, name, expression):
-    """Set a parameter to an expression; never raise."""
+def _setpar_any(o, names, value, quiet=False):
+    """Set the first of several candidate parameter names that exists.
+
+    Parameter names have moved between TouchDesigner builds (Light colour is
+    cr/cg/cb, GLSL MAT shaders are vdat/pdat ...); trying each spelling with
+    _setpar would log a line per miss. This logs once, only if none matched.
+    """
+    for name in names:
+        try:
+            p = getattr(o.par, name)
+        except Exception:
+            continue
+        try:
+            p.val = value
+            return name
+        except Exception as e:
+            print(f"[td_build] could not set {o.path}.{name} = {value!r}: {e}")
+            return None
+    if not quiet:
+        print(f"[td_build] no par {o.path}.{'|'.join(names)}")
+    return None
+
+
+def _expr(o, name, expression, what="expr"):
+    """Set a parameter to an expression; never raise, always report."""
     try:
         p = getattr(o.par, name)
+    except Exception as e:
+        print(f"[td_build] no par {o.path}.{name} for {what}: {e}")
+        return False
+    try:
         p.expr = expression
-        p.mode = ParMode.EXPRESSION  # noqa: F821 (TD global)
+    except Exception as e:
+        print(f"[td_build] could not set {what} {o.path}.{name}: {e}")
+        return False
+    # Setting .expr switches most builds to expression mode by itself; make
+    # sure of it, using the enum class of the parameter's own mode value.
+    try:
+        pm = _par_mode_enum(p)
+        if pm is not None and p.mode != pm.EXPRESSION:
+            p.mode = pm.EXPRESSION
         return True
     except Exception as e:
-        print(f"[td_build] could not set expr {o.path}.{name}: {e}")
+        print(f"[td_build] set {what} on {o.path}.{name} but could not switch its mode: {e}")
         return False
 
 
@@ -145,12 +210,19 @@ def _install_callbacks(script_op, callback_filename):
             pass
 
 
-def _cook_driver(container, sim_op):
-    """Make ``sim_op`` cook every frame while the scene's Active flag is on."""
+def _ensure_active(container):
+    """Every scene carries an Active toggle (build_all binds it to the decks),
+    whether or not it has a cook driver -- the POP scene has none."""
     page = _custom_page(container, "VJ")
     if not hasattr(container.par, "Active"):
         page.appendToggle("Active")
         _setpar(container, "Active", True)
+    return page
+
+
+def _cook_driver(container, sim_op):
+    """Make ``sim_op`` cook every frame while the scene's Active flag is on."""
+    _ensure_active(container)
     try:
         container.store("simpath", sim_op.path)
     except Exception:
@@ -522,15 +594,21 @@ def build_feynman(dest=None, name="feynman"):
     _install_callbacks(state, "feynman_chop.py")
     _setpar(state, "Geosop", "geo/lines")   # relative to the scene, from a CHOP
 
-    # The colours land on the points here. Channel scope takes the CHOP's four
-    # channels in order, attribute scope spends them on Cd.
+    # A CHOP to SOP matches channels to attributes *by name*: Cd(0)..Cd(3),
+    # the same convention SOP to CHOP emits. The Script CHOP puts out c0..c3,
+    # so a Rename CHOP gives them those names (a rename is free), and the
+    # CHOP to SOP is told exactly which channels and which attribute.
+    cd_names = "Cd(0) Cd(1) Cd(2) Cd(3)"
+    named = _create(c, "renameCHOP", "state_cd", -400, -180)
+    _connect(state, named)
+    _setpar_any(named, ("renamefrom", "from"), "c0 c1 c2 c3")
+    _setpar_any(named, ("renameto", "to"), cd_names)
+
     paint = geo.create("choptoSOP", "paint")
     _connect(lines, paint)
-    _setpar(paint, "chop", "../state")
-    for par, val in (("chanscope", "*"), ("attscope", "Cd"),
-                     ("attribscope", "Cd"), ("method", "points"),
-                     ("sopattrib", "Cd")):
-        _setpar(paint, par, val)
+    _setpar(paint, "chop", "../state_cd")
+    _setpar(paint, "chanscope", cd_names)
+    _setpar(paint, "attscope", "Cd")
     try:
         paint.render = True
         paint.display = True
@@ -550,7 +628,7 @@ def build_feynman(dest=None, name="feynman"):
     # geometry, then the colour channels, then the CHOP to SOP that joins them
     # (cooked earlier, before state had any channels, it reports "Channel *
     # not found" for that stale pass).
-    for o in (lines, state, paint):
+    for o in (lines, state, named, paint):
         try:
             o.cook(force=True)
         except Exception:
@@ -895,13 +973,10 @@ def _shader_dat(container, name, filename, x, y, prepend_common=True):
 
 
 def _bindexpr(o, name, expression):
-    try:
-        p = getattr(o.par, name)
-        p.expr = expression
-        p.mode = ParMode.EXPRESSION  # noqa: F821 (TD global)
-        return True
-    except Exception:
-        return False
+    """An expression binding for uniforms/reactive params. Same mechanics as
+    _expr (and the same report line on failure -- a silently unbound uniform
+    is exactly the kind of fault that only shows up as a dead scene)."""
+    return _expr(o, name, expression, what="binding")
 
 
 def _glsl_uniforms(top, scalars, start=0):
@@ -1000,9 +1075,10 @@ def build_tempo(dest=None, name="Tempo", device=1):
 
     clockin = _create(c, "midiinDAT", "clockin", -360, 0)
     _setpar(clockin, "id", device)          # Device ID (not the Device Table path)
-    # Make sure realtime/system messages (clock/start/stop) are delivered.
-    for pn in ("realtime", "system", "clock", "active"):
-        _setpar(clockin, pn, True)
+    _setpar(clockin, "active", True)
+    # Whether clock/start/stop reach the callback depends on the build (see
+    # docs/ARCHITECTURE.md, version-sensitive spots); the manual BPM path in
+    # tempo_chop always works regardless.
     cb = _create(c, "textDAT", "clockin_callbacks", -360, 150)
     cb.text = (
         "import sys\n"
@@ -1206,16 +1282,19 @@ def _light_rig(container, reactor=None, x=-200, y=300):
     makes 3D read as 'pro'. Rim intensity pulses with the beat if a Reactor is
     given. Returns a list of Light COMPs to hand to a Render TOP."""
     rex = _react_exprs(reactor)
-    key = _create(container, "lightCOMP", "key", x, y)
-    _setpar(key, "tx", 6.0); _setpar(key, "ty", 7.0); _setpar(key, "tz", 6.0)
-    _setpar(key, "colorr", 1.0); _setpar(key, "colorg", 0.85); _setpar(key, "colorb", 0.65)
-    fill = _create(container, "lightCOMP", "fill", x, y - 120)
-    _setpar(fill, "tx", -7.0); _setpar(fill, "ty", 2.0); _setpar(fill, "tz", 4.0)
-    _setpar(fill, "colorr", 0.4); _setpar(fill, "colorg", 0.6); _setpar(fill, "colorb", 1.0)
+    def light(name, pos, rgb, dy):
+        L = _create(container, "lightCOMP", name, x, y - dy)
+        _setpar(L, "tx", pos[0]); _setpar(L, "ty", pos[1]); _setpar(L, "tz", pos[2])
+        # Light COMP colour is cr/cg/cb (colorr/g/b is the Constant TOP/MAT spelling).
+        _setpar_any(L, ("cr", "colorr"), rgb[0])
+        _setpar_any(L, ("cg", "colorg"), rgb[1])
+        _setpar_any(L, ("cb", "colorb"), rgb[2])
+        return L
+
+    key = light("key", (6.0, 7.0, 6.0), (1.0, 0.85, 0.65), 0)
+    fill = light("fill", (-7.0, 2.0, 4.0), (0.4, 0.6, 1.0), 120)
     _setpar(fill, "dimmer", 0.5)
-    rim = _create(container, "lightCOMP", "rim", x, y - 240)
-    _setpar(rim, "tx", 0.0); _setpar(rim, "ty", 4.0); _setpar(rim, "tz", -8.0)
-    _setpar(rim, "colorr", 0.9); _setpar(rim, "colorg", 0.95); _setpar(rim, "colorb", 1.0)
+    rim = light("rim", (0.0, 4.0, -8.0), (0.9, 0.95, 1.0), 240)
     if reactor is not None:
         _bindexpr(rim, "dimmer", f"1.0 + 2.0*{rex['beat']}")
     return [key, fill, rim]
@@ -1231,8 +1310,11 @@ def _glow_mat(container, reactor=None, name="glow_mat", x=-200, y=-180):
         mat = _create(container, "constantMAT", name, x, y)
         _setpar(mat, "applypointcolor", True)
         return mat
-    _setpar(mat, "vertexdat", _shader_dat(container, name + "_vert", "glow_mat.vert", x, y - 130, prepend_common=False))
-    _setpar(mat, "pixeldat", _shader_dat(container, name + "_pix", "glow_mat.pixel", x + 150, y - 130, prepend_common=False))
+    # GLSL MAT shader DAT parameters are vdat/pdat (the GLSL TOP's is pixeldat).
+    _setpar_any(mat, ("vdat", "vertexdat"),
+                _shader_dat(container, name + "_vert", "glow_mat.vert", x, y - 130, prepend_common=False))
+    _setpar_any(mat, ("pdat", "pixeldat"),
+                _shader_dat(container, name + "_pix", "glow_mat.pixel", x + 150, y - 130, prepend_common=False))
     _glsl_uniforms(mat, [("uLevel", rex["level"]), ("uBeat", rex["beat"])])
     return mat
 
@@ -1269,14 +1351,14 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
     particle = _try_create(geo, "particlePOP", "sim") if emitter is not None else None
 
     if emitter is not None and particle is not None:
-        _setpar(emitter, "radius", 1.5)
+        _setpar_any(emitter, ("radius", "rad", "radx"), 1.5)
         _connect(emitter, particle, 0)
-        _setpar(particle, "maxparticles", int(count))
-        _setpar(particle, "birthrate", max(1000, int(count / 20)))
-        _setpar(particle, "lifeexpect", 6.0)
-        _setpar(particle, "lifevariance", 2.0)
-        _setpar(particle, "velocitydamping", 0.04)
-        _setpar(particle, "enabletimeintegration", True)
+        _setpar_any(particle, ("maxparticles", "maxpoints"), int(count))
+        _setpar_any(particle, ("birthrate", "birth"), max(1000, int(count / 20)))
+        _setpar_any(particle, ("lifeexpect", "life", "lifespan"), 6.0)
+        _setpar_any(particle, ("lifevariance", "lifevar"), 2.0)
+        _setpar_any(particle, ("velocitydamping", "damping", "drag"), 0.04)
+        _setpar_any(particle, ("enabletimeintegration", "integrate"), True, quiet=True)
         # Forces in a feedback loop: a radial push + turbulent noise.
         force = _try_create(geo, "forceradialPOP", "force")
         noise = _try_create(geo, "noisePOP", "turb")
@@ -1296,19 +1378,15 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
             _connect(chain_tail, nullp, 0)
             chain_tail = nullp
         # Close the feedback loop so the forces integrate into the particles.
-        for fbpar in ("targetfeedbackpop", "feedbackpop", "targetpop"):
-            if _setpar(particle, fbpar, chain_tail):
-                break
+        _setpar_any(particle, ("targetfeedbackpop", "feedbackpop", "targetpop"), chain_tail)
         render_pop = chain_tail
         try:
             render_pop.render = True
             render_pop.display = True
         except Exception:
             pass
-        # Tell the Geometry COMP to render the POP (param name varies by build).
-        for gp in ("pop", "poprender", "rendersop"):
-            if _setpar(geo, gp, render_pop):
-                break
+        # A Geometry COMP renders whichever POP inside it has its render flag on
+        # (set above), the same as SOPs; no parameter names it.
         built_pops = True
     else:
         # --- Fallback: proven curl-noise flow at a high particle count -----
@@ -1347,7 +1425,9 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         pass
     tr = _trails(c, r, amount=0.92)
     out = _glow(c, tr, size=18.0, x=640)
-    if not built_pops:
+    if built_pops:
+        _ensure_active(c)      # no driver needed (GPU, time-dependent), but
+    else:                      # build_all still binds Active to the decks
         _cook_driver(c, geo.op("sim"))
     print(f"[td_build] built POP particle storm -> {c.path} "
           f"({'POPs' if built_pops else 'flow fallback'})")
