@@ -257,8 +257,7 @@ hot-swappable assets + a thin, defensive TD adapter.
   crisp, and colours by speed. Verified in `tests/test_hydrogen.py`: 1s is
   static, `psi_{2,1,+1}` circulates in +phi (and −m reverses), superpositions
   are time-dependent, and the sampler reproduces `<r>_{1s}=1.5 a0`. Rendered via
-  instancing (reliable) with a `choptopPOP` wired but render-off so you can move
-  to a POP render path once verified on your build. The velocity scale is
+  instancing. The velocity scale is
   deliberately exaggerated (a `Speed` param) — true atomic velocities are tiny.
 
 ### Version-sensitive spots (verify on first load)

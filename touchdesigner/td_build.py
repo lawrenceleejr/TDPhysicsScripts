@@ -631,8 +631,20 @@ def build_feynman(dest=None, name="feynman"):
     for o in (lines, state, named, paint):
         try:
             o.cook(force=True)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[td_build] cook of {o.path} raised: {e}")
+    # What the CHOP to SOP actually sees, for the build report: the two CHOPs'
+    # channel names and the path it resolves. If the field renders white this
+    # is the line that says why.
+    try:
+        def chans(o):
+            return " ".join(ch.name for ch in o.chans()) or "(no channels)"
+        print(f"[td_build] feynman join: state[{state.numChans}] = {chans(state)}; "
+              f"state_cd[{named.numChans}] = {chans(named)}; "
+              f"paint.chop -> {paint.par.chop.eval()}; "
+              f"paint warnings: {paint.warnings() or 'none'}")
+    except Exception as e:
+        print(f"[td_build] feynman join diagnostics failed: {e}")
     print(f"[td_build] built Feynman -> {c.path}")
     return c
 
@@ -970,6 +982,16 @@ def _shader_dat(container, name, filename, x, y, prepend_common=True):
     dat = _create(container, "textDAT", name, x, y)
     dat.text = _load_shader(filename, prepend_common)
     return dat
+
+
+def _bindexpr_any(o, names, expression):
+    """_bindexpr on the first of several candidate parameter names that exists
+    (a POP strength has been called several things); logs once if none does."""
+    for name in names:
+        if hasattr(o.par, name):
+            return _expr(o, name, expression, what="binding")
+    print(f"[td_build] no par {o.path}.{'|'.join(names)} for binding")
+    return False
 
 
 def _bindexpr(o, name, expression):
@@ -1366,7 +1388,8 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         chain_tail = particle
         if force is not None:
             _connect(chain_tail, force, 0)
-            _bindexpr(force, "force", f"-2.0 - 6.0*{rex['bass']}")
+            _bindexpr_any(force, ("force", "strength", "magnitude", "amount", "scale"),
+                          f"-2.0 - 6.0*{rex['bass']}")
             chain_tail = force
         if noise is not None:
             _connect(chain_tail, noise, 0)
@@ -1443,10 +1466,9 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
     for real / m = 0 orbitals they sit nearly still; superpositions slosh. Pick
     the state on the sim's 'Orbital' menu.
 
-    Rendered with the compiled glow material + a 3-point light rig. Instancing
-    is the reliable render path; a 'points' POP is also wired from the sim so
-    you can render via the POP family on TD 2025+ (flip the POP's Render flag
-    and the geo's Instancing off) once verified on your build.
+    Rendered by instancing with the compiled glow material + a 3-point light
+    rig (a POP point-cloud path was tried; the operator type does not exist on
+    2025.3, and instancing is fast enough at these counts).
     """
     dest = dest or op("/")  # noqa: F821
     c = _create(dest, "baseCOMP", name)
@@ -1476,16 +1498,6 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
                   ("instancer", "c3"), ("instanceg", "c4"), ("instanceb", "c5")):
         _setpar(geo, p, ch)
     _setpar(geo, "instancecolormode", "mult")
-
-    # Best-effort POP point cloud from the same channels (render flag left off
-    # so it never competes with the instancing path; see docstring).
-    pop = _try_create(geo, "choptopPOP", "points", -460, -150)
-    if pop is not None:
-        try:
-            _setpar(pop, "chop", sim)
-            pop.render = pop.display = False
-        except Exception:
-            pass
 
     mat = _glow_mat(c, reactor)
     _setpar(geo, "material", mat)
