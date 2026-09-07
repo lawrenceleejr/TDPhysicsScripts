@@ -129,14 +129,19 @@ def onCook(scriptOp):
         st["base"], st["geom"] = _base_image(W, H, lo, hi)
         st["key"], st["lastmass"] = key, None
 
-    # The Open Data sim stores the mass of the event it's currently drawing.
+    # The Open Data sim stores the mass of the event it's currently drawing on
+    # the scene COMP (our parent). Older callback versions stored it on the
+    # sim itself; read that as a fallback.
     mass = 0.0
     try:
-        sp = scriptOp.parent().fetch("simpath", "")
-        if sp:
-            mass = float(op(sp).fetch("invariant_mass", 0.0))  # noqa: F821
+        mass = float(scriptOp.parent().fetch("invariant_mass", 0.0, search=False))
     except Exception:
-        pass
+        try:
+            sp = scriptOp.parent().fetch("simpath", "")
+            if sp:
+                mass = float(op(sp).fetch("invariant_mass", 0.0))  # noqa: F821
+        except Exception:
+            pass
 
     # Only redraw/upload when the marked event actually changes; otherwise the
     # TOP keeps its last image (mirrors the Open Data SOP's frame guard).

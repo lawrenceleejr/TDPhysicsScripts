@@ -546,11 +546,15 @@ def build_feynman(dest=None, name="feynman"):
     tr = _trails(c, r, amount=0.0)
     _glow(c, tr, size=10.0, x=640)
     _cook_driver(c, state)               # the CHOP is what has to cook per frame
-    try:
-        lines.cook(force=True)
-        state.cook(force=True)
-    except Exception:
-        pass
+    # Cook in dependency order so the build report reflects the wired state:
+    # geometry, then the colour channels, then the CHOP to SOP that joins them
+    # (cooked earlier, before state had any channels, it reports "Channel *
+    # not found" for that stale pass).
+    for o in (lines, state, paint):
+        try:
+            o.cook(force=True)
+        except Exception:
+            pass
     print(f"[td_build] built Feynman -> {c.path}")
     return c
 
@@ -619,9 +623,11 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
     _setpar(c, "Device", device)
 
     # MIDI input from the APC -> note/CC handling.
+    # 'id' is the Device ID from TD's MIDI Device Mapper. ('device' on these
+    # ops is the Device *Table* DAT path -- setting it to a number left an
+    # "Invalid path for node" warning on the MIDI Out CHOP.)
     midiin = _create(c, "midiinDAT", "midiin", -300, 200)
     _setpar(midiin, "id", device)
-    _setpar(midiin, "device", device)
     in_cb = _create(c, "textDAT", "midiin_callbacks", -300, 330)
     in_cb.text = (
         "import sys\n"
@@ -640,7 +646,6 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
     # LED output back to the APC (Note On with behaviour-selecting channel).
     ledout = _create(c, "midioutCHOP", "ledout", -100, 200)
     _setpar(ledout, "id", device)
-    _setpar(ledout, "device", device)
 
     # Watch the show + the surface's own pars; repaint LEDs / handle Reset.
     watch = _create(c, "parameterexecuteDAT", "statewatch", 100, 200)
@@ -681,10 +686,8 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
         "        c = par.owner\n"
         "        for nm in ('midiin', 'ledout'):\n"
         "            o = c.op(nm)\n"
-        "            if o is not None:\n"
-        "                for pn in ('id', 'device'):\n"
-        "                    if hasattr(o.par, pn):\n"
-        "                        setattr(o.par, pn, par.eval())\n"
+        "            if o is not None and hasattr(o.par, 'id'):\n"
+        "                o.par.id = par.eval()\n"
         "        apc_mini.reset(c)\n"
         "    except Exception as e:\n"
         "        debug('[apc] device', e)\n"
@@ -996,8 +999,7 @@ def build_tempo(dest=None, name="Tempo", device=1):
     c = _create(dest, "baseCOMP", name)
 
     clockin = _create(c, "midiinDAT", "clockin", -360, 0)
-    for pn in ("id", "device"):
-        _setpar(clockin, pn, device)
+    _setpar(clockin, "id", device)          # Device ID (not the Device Table path)
     # Make sure realtime/system messages (clock/start/stop) are delivered.
     for pn in ("realtime", "system", "clock", "active"):
         _setpar(clockin, pn, True)

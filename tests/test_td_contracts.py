@@ -300,3 +300,49 @@ def test_apc_module_parses_with_required_hooks():
     tree = ast.parse(_src("touchdesigner", "callbacks", "apc_mini.py"))
     funcs = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert {"on_midi", "repaint", "reset", "onSetupParameters", "onCook"} <= funcs
+
+
+# --- lessons from the first real build report ----------------------------
+def test_every_sop_callback_creates_cd_without_relying_on_a_default():
+    """TD 2025+ rejects a default for the standard Cd attribute ("Cannot
+    specify default for standard attributes"); older builds want one. Every
+    Script SOP callback that colours points must try both spellings."""
+    for f in os.listdir(CALLBACKS):
+        if not f.endswith("_sop.py"):
+            continue
+        src = _src("touchdesigner", "callbacks", f)
+        if 'pointAttribs.create("Cd"' not in src:
+            continue
+        assert 'pointAttribs.create("Cd", (0.0, 0.0, 0.0))' in src, f
+        assert 'pointAttribs.create("Cd")' in src, f
+
+
+def test_builder_never_sets_the_midi_device_table_to_an_id():
+    """On MIDI In DATs and MIDI Out CHOPs 'device' is the Device *Table* DAT
+    path; the Device Mapper id is 'id'. Setting 'device' to a number left an
+    "Invalid path for node" warning on the APC's LED output."""
+    src = _src("touchdesigner", "td_build.py")
+    assert not re.search(r'_setpar\(\w+,\s*"device"', src)
+    assert not re.search(r"""\(['"]id['"],\s*['"]device['"]\)""", src)   # the old loops
+    assert '_setpar(ledout, "id", device)' in src
+    assert '_setpar(midiin, "id", device)' in src
+
+
+def test_control_chops_leave_time_slice_mode_before_sizing():
+    """A Script CHOP fed by audio inherits Time Slice mode, where numSamples
+    cannot be edited (a tdWarning every frame). Both control CHOPs must
+    switch it off before emitting their one-sample channels."""
+    for f in ("audio_chop.py", "tempo_chop.py"):
+        src = _src("touchdesigner", "callbacks", f)
+        assert "isTimeSlice = False" in src, f
+        assert src.index("isTimeSlice = False") < src.index("numSamples = 1"), f
+
+
+def test_opendata_publishes_mass_on_the_scene_not_on_itself():
+    """Storing on your own op while cooking is a cook-dependency loop; the
+    live invariant mass goes on the scene COMP and the HUD reads it there."""
+    sop = _src("touchdesigner", "callbacks", "opendata_sop.py")
+    hud = _src("touchdesigner", "callbacks", "mass_hud_top.py")
+    assert 'scriptOp.parent().store("invariant_mass"' in sop
+    assert 'scriptOp.store("invariant_mass"' not in sop
+    assert 'scriptOp.parent().fetch("invariant_mass"' in hud

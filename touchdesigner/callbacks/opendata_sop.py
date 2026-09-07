@@ -109,11 +109,17 @@ def onCook(scriptOp):
     elapsed = now - st["t0"]
     frac = 1.0 if grow_time <= 0 else min(elapsed / grow_time, 1.0)
 
-    # Expose the current invariant mass so a HUD/Text can read it.
-    try:
-        scriptOp.store("invariant_mass", float(show.current_mass))
-    except Exception:
-        pass
+    # Expose the current invariant mass so the HUD can read it. It goes on the
+    # scene COMP (the SOP's parent), not on this SOP: storage is dependable,
+    # and an op writing its own storage while it cooks is a cook-dependency
+    # loop on itself. Written only when the event changes.
+    mass = float(show.current_mass)
+    if st.get("stored_mass") != mass:
+        st["stored_mass"] = mass
+        try:
+            scriptOp.parent().store("invariant_mass", mass)
+        except Exception:
+            pass
 
     # Quantise the reveal to whole points: tracks have n_points samples, so
     # rebuilding more often than that re-appends identical geometry (the old
