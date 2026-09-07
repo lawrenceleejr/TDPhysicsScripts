@@ -486,3 +486,23 @@ def test_overlay_is_switch_gated_and_pop_binds_the_reported_names():
     assert "_report_master_chain(" in src
     startup = _src("touchdesigner", "startup.py")
     assert "_glsl_compile_log(" in startup and '"infoDAT"' in startup
+
+
+def test_scenes_end_in_an_out_top_and_wires_are_verified():
+    """TD does not wire across COMP boundaries (and connect() stays silent), so
+    a scene must end in an Out TOP -- the COMP's output connector is what the
+    deck switches take -- the overlay must fetch Reactor textures with Select
+    TOPs, and _connect must check that each wire took."""
+    src = _src("touchdesigner", "td_build.py")
+    glow = src[src.index("def _glow("):src.index("def _trails(")]
+    assert '"outTOP" if name == "out" else "nullTOP"' in glow
+    hud = src[src.index("def _mass_hud("):src.index("def build_ising(")]
+    assert '_create(container, "outTOP", "out"' in hud
+    build_all = src[src.index("def build_all("):src.index("# =====")]
+    assert "feed = _scene_feed(base, out)" in build_all
+    assert "_connect(out, switch_a" not in build_all
+    overlay = src[src.index("def _waveform_overlay("):src.index("def _post_fx(")]
+    assert overlay.count('"selectTOP"') == 2
+    assert 'reactor.op("wave_tex"), ov' not in overlay
+    connect = src[src.index("def _connect("):src.index("def _install_callbacks(")]
+    assert "dst.inputs" in connect and "did not take" in connect
