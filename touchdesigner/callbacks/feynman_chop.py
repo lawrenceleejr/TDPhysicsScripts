@@ -26,6 +26,8 @@ from physics.feynman import FeynmanShow
 from physics import palette
 
 _STATE = {}
+# The channel names a CHOP to SOP looks up for the Cd (colour) attribute.
+CD_CHANNELS = ["Cd(0)", "Cd(1)", "Cd(2)", "Cd(3)"]
 
 
 def _state(scriptOp):
@@ -154,6 +156,17 @@ def onCook(scriptOp):
 
     out = np.ascontiguousarray(show.colours().T.astype(np.float32))
     scriptOp.copyNumpyArray(out, baseName="c")
+    # The CHOP to SOP downstream matches channels to the Cd attribute by
+    # name, Cd(0)..Cd(3). Rename in place when this build allows a Script CHOP
+    # to (it costs nothing); the Rename CHOP td_build wires after this op does
+    # the same job on builds that do not, and passes these through untouched.
+    if st.get("renamed") is not False:
+        try:
+            for i in range(4):
+                scriptOp[i].name = CD_CHANNELS[i]
+            st["renamed"] = True
+        except Exception:
+            st["renamed"] = False
 
 
 setupParameters = onSetupParameters
