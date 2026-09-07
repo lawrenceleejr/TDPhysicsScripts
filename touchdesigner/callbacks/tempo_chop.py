@@ -111,9 +111,18 @@ def onCook(scriptOp):
     sine = 0.5 + 0.5 * math.sin(beat_phase * 2.0 * math.pi)
     vals = {"bpm": bpm, "beat": beat_phase, "bar": bar_phase, "sine": sine, "pulse": pulse}
     # Named single-sample channels (appendChan is the documented way to name
-    # Script CHOP channels; everything downstream reads these by name).
+    # Script CHOP channels; everything downstream reads these by name). Leave
+    # Time Slice mode first: numSamples cannot be edited while it is on.
+    try:
+        if scriptOp.isTimeSlice:
+            scriptOp.isTimeSlice = False
+    except Exception:
+        pass
     scriptOp.clear()
-    scriptOp.numSamples = 1
+    try:
+        scriptOp.numSamples = 1
+    except Exception:
+        pass
     for name in _CHANNELS:
         ch = scriptOp.appendChan(name)
         ch[0] = float(vals[name])

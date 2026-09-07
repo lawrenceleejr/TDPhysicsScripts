@@ -71,7 +71,15 @@ def onPulse(par):
 
 def _build(scriptOp, show):
     scriptOp.clear()
-    scriptOp.pointAttribs.create("Cd", (0.0, 0.0, 0.0))
+    # Cd is a standard attribute in TD 2025+ (no default allowed); older builds
+    # require a default. Try both, then fall back to it already existing.
+    try:
+        scriptOp.pointAttribs.create("Cd", (0.0, 0.0, 0.0))
+    except Exception:
+        try:
+            scriptOp.pointAttribs.create("Cd")
+        except Exception:
+            pass
     for pts in show.polys:
         m = len(pts)
         if m < 2:

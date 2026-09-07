@@ -277,7 +277,8 @@ class ShapeMatchedSoftBody:
 
     def _best_fit_rotation(self, p: np.ndarray) -> np.ndarray:
         # Cross-covariance between current (centered) and rest positions.
-        A = p.T @ self.q0  # (3, 3)
+        with np.errstate(all="ignore"):     # see the note on step()
+            A = p.T @ self.q0  # (3, 3)
         if not np.isfinite(A).all():
             return np.eye(3)
         U, _, Vt = np.linalg.svd(A)
@@ -291,17 +292,26 @@ class ShapeMatchedSoftBody:
         """Per-particle deviation from the matched rigid shape (N,) float32."""
         cm = self.pos.mean(axis=0)
         R = self._best_fit_rotation(self.pos - cm)
-        goal = self.q0 @ R.T + cm
+        with np.errstate(all="ignore"):     # see the note on step()
+            goal = self.q0 @ R.T + cm
         return np.sqrt(((self.pos - goal) ** 2).sum(axis=1)).astype(np.float32)
 
     def step(self, dt: float = 1.0 / 60.0) -> None:
+        # The (N, 3) @ (3, 3) products below run through the platform BLAS. On
+        # macOS that is Apple Accelerate, which leaves floating-point exception
+        # flags set after perfectly finite matmuls, so numpy reports "divide by
+        # zero / overflow / invalid value encountered in matmul" every frame
+        # for nothing (the values are fine). The state is checked for finiteness
+        # explicitly at the end of the step, so the flags carry no information
+        # here and are silenced around the products.
         self.t += dt
         cm = self.pos.mean(axis=0)
         p = self.pos - cm
         R = self._best_fit_rotation(p)
         # Nudge the orientation forward each step to keep a steady spin.
         R_step = _rotation_matrix(self.axis, self.spin * dt)
-        goal = (self.q0 @ R.T) @ R_step.T + cm
+        with np.errstate(all="ignore"):
+            goal = (self.q0 @ R.T) @ R_step.T + cm
         # Position-based shape matching (Mueller et al.): move a fraction of the
         # way to the matched goal each step. This is unconditionally stable for
         # stiffness in [0, 1] -- the explicit-Euler spring it replaced

@@ -47,13 +47,39 @@ def _emit(scriptOp, vals):
     appendChan is the documented Script CHOP way to get *named* channels;
     copyNumpyArray only ever names them <base>0, <base>1, ... and every
     expression downstream reads these by name (op('Reactor/analyze')['bass']).
-    Six scalars, so the per-channel calls cost nothing measurable.
+
+    A Script CHOP fed by an audio CHOP inherits Time Slice mode, in which the
+    sample count is the frame's audio block and cannot be edited ("Editing
+    numSamples is not supported in Time Slice mode"). These are control
+    values, one per frame, so Time Slice is switched off first; if a build
+    refuses even that, every sample of the slice is filled so a reader of the
+    current sample still sees the value.
     """
+    try:
+        if scriptOp.isTimeSlice:
+            scriptOp.isTimeSlice = False
+    except Exception:
+        pass
     scriptOp.clear()
-    scriptOp.numSamples = 1
+    try:
+        scriptOp.numSamples = 1
+    except Exception:
+        pass
+    n = 1
+    try:
+        n = max(1, int(scriptOp.numSamples))
+    except Exception:
+        pass
     for name in _CHANNELS:
         ch = scriptOp.appendChan(name)
-        ch[0] = float(vals.get(name, 0.0))
+        v = float(vals.get(name, 0.0))
+        if n == 1:
+            ch[0] = v
+        else:
+            try:
+                ch.vals = [v] * n
+            except Exception:
+                ch[0] = v
 
 
 def onSetupParameters(scriptOp):
