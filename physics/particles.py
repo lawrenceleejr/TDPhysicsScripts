@@ -40,6 +40,9 @@ _GRADIENTS = np.array(
     ],
     dtype=np.float32,
 )
+# The same table split per component: three 1-D gathers are much cheaper than
+# one (N, 3) gather followed by three column slices.
+_GX, _GY, _GZ = (np.ascontiguousarray(_GRADIENTS[:, c]) for c in range(3))
 
 
 class NoiseField:
@@ -50,9 +53,10 @@ class NoiseField:
         p = rng.permutation(256)
         self.perm = np.concatenate([p, p]).astype(np.int32)  # length 512
 
-    def _grad(self, h: np.ndarray, x, y, z) -> np.ndarray:
-        g = _GRADIENTS[h & 15]
-        return g[:, 0] * x + g[:, 1] * y + g[:, 2] * z
+    @staticmethod
+    def _grad(h: np.ndarray, x, y, z) -> np.ndarray:
+        h = h & 15
+        return _GX[h] * x + _GY[h] * y + _GZ[h] * z
 
     def noise(self, pts: np.ndarray) -> np.ndarray:
         """Perlin noise sampled at ``pts`` (N, 3) -> (N,) roughly in [-1, 1]."""
@@ -134,6 +138,7 @@ class CurlNoiseFlow:
         self.vel = np.zeros_like(self.pos)
         self.t = 0.0
         self.field = self._build_field()
+        self._field_flat = self.field.reshape(-1, 3)
         self.last_frame = -1
 
     @property
@@ -167,20 +172,25 @@ class CurlNoiseFlow:
         return np.stack([vx, vy, vz], axis=-1).astype(np.float32)
 
     def velocity_at(self, pos: np.ndarray) -> np.ndarray:
-        """Trilinearly interpolate the current curl field at ``pos`` (N, 3)."""
+        """Trilinearly interpolate the current curl field at ``pos`` (N, 3).
+
+        The eight cube corners are fetched with 1-D ``take`` on a flattened
+        (R*R*R, 3) view of the field -- a fraction of the cost of eight
+        three-index fancy gathers, which was most of the per-frame time.
+        """
         R = self.grid_res
         g = (pos + self.bounds) / (2.0 * self.bounds) * (R - 1)
         g = np.clip(g, 0.0, R - 1.0 - 1e-4)
         i = np.floor(g).astype(np.int32)
         f = g - i
-        ix, iy, iz = i[:, 0], i[:, 1], i[:, 2]
-        ix1, iy1, iz1 = ix + 1, iy + 1, iz + 1
         fx, fy, fz = f[:, 0:1], f[:, 1:2], f[:, 2:3]
-        fld = self.field
-        c00 = fld[ix, iy, iz] * (1 - fx) + fld[ix1, iy, iz] * fx
-        c10 = fld[ix, iy1, iz] * (1 - fx) + fld[ix1, iy1, iz] * fx
-        c01 = fld[ix, iy, iz1] * (1 - fx) + fld[ix1, iy, iz1] * fx
-        c11 = fld[ix, iy1, iz1] * (1 - fx) + fld[ix1, iy1, iz1] * fx
+        base = (i[:, 0] * R + i[:, 1]) * R + i[:, 2]      # linear index of the corner
+        fld = self._field_flat
+        R2 = R * R
+        c00 = fld.take(base, axis=0) * (1 - fx) + fld.take(base + R2, axis=0) * fx
+        c10 = fld.take(base + R, axis=0) * (1 - fx) + fld.take(base + R2 + R, axis=0) * fx
+        c01 = fld.take(base + 1, axis=0) * (1 - fx) + fld.take(base + R2 + 1, axis=0) * fx
+        c11 = fld.take(base + R + 1, axis=0) * (1 - fx) + fld.take(base + R2 + R + 1, axis=0) * fx
         c0 = c00 * (1 - fy) + c10 * fy
         c1 = c01 * (1 - fy) + c11 * fy
         return c0 * (1 - fz) + c1 * fz
@@ -189,6 +199,7 @@ class CurlNoiseFlow:
         self.t += dt
         if self._steps % self.field_interval == 0:
             self.field = self._build_field()
+            self._field_flat = self.field.reshape(-1, 3)
         self._steps += 1
         self.vel = self.velocity_at(self.pos) * self.speed
         self.pos = self.pos + self.vel * dt

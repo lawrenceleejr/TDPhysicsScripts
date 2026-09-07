@@ -54,16 +54,34 @@ class NBodySim:
 
     # -- dynamics --------------------------------------------------------
     def _accelerations(self) -> np.ndarray:
-        # diff[i, j] = pos[j] - pos[i]
-        diff = self.pos[None, :, :] - self.pos[:, None, :]  # (N, N, 3)
-        # einsum is markedly faster than (diff*diff).sum(axis=2) for the
-        # squared-distance reduction, which dominates the step cost.
-        r2 = np.einsum("ijk,ijk->ij", diff, diff) + self.softening * self.softening
-        inv_r3 = 1.0 / (r2 * np.sqrt(r2))
-        np.fill_diagonal(inv_r3, 0.0)  # no self-force
-        # acc[i] = G * sum_j m_j * diff[i, j] / r3
-        weight = inv_r3 * self.mass[None, :]
-        return self.G * np.einsum("ij,ijk->ik", weight, diff)
+        """All-pairs softened gravity, O(N^2), without an (N, N, 3) temporary.
+
+        The squared pair distances come from the Gram matrix,
+        ``r2_ij = |p_i|^2 + |p_j|^2 - 2 p_i.p_j``, and the force sum is a
+        matrix product, ``acc_i = G * (sum_j w_ij p_j - p_i sum_j w_ij)`` with
+        ``w_ij = m_j / r_ij^3``. Both are BLAS calls on (N, N) arrays, which is
+        several times faster than building the (N, N, 3) difference tensor the
+        obvious formulation needs -- and that tensor was the whole frame budget
+        at 600 bodies. float64 throughout, so the cancellation in ``r2`` for
+        close pairs is far below the softening length.
+        """
+        pos = self.pos
+        sq = np.einsum("ij,ij->i", pos, pos)        # |p_i|^2
+        r2 = pos @ pos.T                            # p_i . p_j
+        r2 *= -2.0
+        r2 += sq[:, None]
+        r2 += sq[None, :]                           # now |p_i - p_j|^2
+        r2 += self.softening * self.softening
+        np.maximum(r2, 1e-300, out=r2)              # cancellation guard
+        w = np.sqrt(r2)                             # r
+        w *= r2                                     # r^3
+        np.reciprocal(w, out=w)                     # 1 / r^3
+        np.fill_diagonal(w, 0.0)                    # no self-force
+        w *= self.mass[None, :]                     # w_ij = m_j / r_ij^3
+        acc = w @ pos
+        acc -= w.sum(axis=1)[:, None] * pos
+        acc *= self.G
+        return acc
 
     def step(self, dt: float | None = None) -> None:
         """One kick-drift-kick leapfrog step."""
