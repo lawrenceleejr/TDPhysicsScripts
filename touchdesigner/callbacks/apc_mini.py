@@ -43,9 +43,9 @@ except Exception:
 
 # Scene COMP names in build_all() order, and each scene's "re-fire" pulse.
 SCENE_NAMES = ["ising", "nbody", "flow", "softbody", "lhc", "opendata",
-               "rd", "sdf", "pops", "hydrogen"]
+               "rd", "sdf", "pops", "hydrogen", "feynman"]
 REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent",
-                "Reseed", "Reseed", "Reset", "Reset"]
+                "Reseed", "Reseed", "Reset", "Reset", "Reseed"]
 N_SCENES = len(SCENE_NAMES)
 N_PAL = len(_PALETTES)
 N_GRID_COLS = 8  # the APC grid is 8 wide; scene 8 lives on a scene button
@@ -155,9 +155,14 @@ def _scene_comp(t, idx):
 
 
 def _scene_sim(t, idx):
+    """The Script CHOP that carries a scene's live parameters: 'sim' for most
+    scenes, 'state' for the Feynman field (its geometry is static; the CHOP is
+    the part that animates)."""
     c = _scene_comp(t, idx)
+    if c is None:
+        return None
     try:
-        return c.op("sim") if c is not None else None
+        return c.op("sim") or c.op("state")
     except Exception:
         return None
 

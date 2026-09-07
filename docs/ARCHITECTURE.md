@@ -46,6 +46,19 @@ The N-body and particle callbacks emit a single `(7, N)` float32 array via
 | c3 c4 c5 | colour r g b      | `instancer/g/b`    |
 | c6       | uniform scale     | `instancesx/sy/sz` |
 
+The Feynman callback emits a `(4, P)` array instead — one sample per **point**
+of the field's geometry, not per instance:
+
+| channel | meaning |
+|---------|---------|
+| c0 c1 c2 | colour r g b, already multiplied by the line's tone |
+| c3       | alpha: 1 up to the growing tip of the line, 0 past it |
+
+A **CHOP to SOP** lands those on the geometry's `Cd`, which is why the sample
+count has to equal the point count exactly. `feynman_chop.py` reads the field
+and marks settings off the Script SOP rather than keeping its own copies, so
+the two cannot drift apart.
+
 ## Key TouchDesigner APIs used
 
 * **Script TOP** — `scriptOp.copyNumpyArray(arr)`, `arr` shape `(H, W, 3)`
@@ -103,6 +116,34 @@ If you'd rather build a scene by hand (or a builder hits a version quirk):
 2. Assign a **Constant MAT** with **Apply Point Color** On to `geo` (this shows
    the per-track `Cd` colours).
 3. **Camera** + **Render TOP** → bloom → **Null TOP** `out`.
+
+### Static-geometry scene (Feynman)
+
+The one scene whose geometry never moves. The field is 12,000-odd points and
+rebuilding that in Python every frame would not hold 60 fps, so the geometry is
+built once and only its point colours change.
+
+1. **Geometry COMP** `geo`; inside it a **Script SOP** named `lines` with
+   `feynman_sop.py` as callbacks (`_REPO` edited). Pulse Setup Parameters.
+   Leave its Render and Display flags **off** — the SOP downstream is what
+   renders.
+2. A **Script CHOP** `state` beside `geo` (not inside it) with
+   `feynman_chop.py`. Set its **Geometry SOP** parameter to `../geo/lines`.
+3. Inside `geo`, a **CHOP to SOP** `paint` with `lines` as its input and
+   **CHOP** set to `../state`. Set **Channel Scope** to `*` and **Attribute
+   Scope** to `Cd`. Turn its Render and Display flags on.
+4. Assign a **Constant MAT** with **Apply Point Color** On to `geo`.
+5. **Camera** (straight on, no tilt) + **Render TOP** → bloom → **Null TOP**
+   `out`.
+6. The `cook_driver` force-cooks **`state`**, not the SOP: the CHOP is what has
+   to run every frame.
+
+If the field renders as flat white, step 3 is where to look — the scope
+parameter names have moved between TouchDesigner versions, and `td_build` sets
+several spellings defensively rather than assuming one. If it renders as
+nothing, check that the CHOP's sample count matches the SOP's point count
+(`state` info → `numSamples`); a mismatch means the two are on different
+fields or disagree about the marks toggle.
 
 ### The switcher / crossfader (build_all)
 
