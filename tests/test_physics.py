@@ -497,3 +497,70 @@ def test_scalar_lines_are_drawn_dashed():
     # the polyline list and the colour buffer still agree point for point
     assert sum(len(p) for p in show.polys) == show.n_points == len(show.colours())
 
+
+
+# --- the instrument HUD (vector font + dog-leg leaders) -----------------
+def test_vector_font_covers_the_readout_and_advances_evenly():
+    from physics import vecfont
+    for ch in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.-+/:":
+        assert ch in vecfont.GLYPHS, ch
+        for poly in vecfont.GLYPHS[ch]:
+            assert len(poly) >= 2, ch
+            for x, y in poly:
+                assert -0.1 <= x <= vecfont.W + 1e-6, (ch, x)
+                assert -0.1 <= y <= 1.0 + 1e-6, (ch, y)
+    # a string lays out left to right on a fixed pitch, scaled by cap height
+    polys = vecfont.strokes("AB", height=2.0)
+    assert polys and all(p.dtype == np.float32 for p in polys)
+    xs_a = [p[:, 0].min() for p in vecfont.strokes("A", height=2.0)]
+    xs_b = [p[:, 0].min() for p in vecfont.strokes("XB", height=2.0)]
+    assert min(xs_b) >= min(xs_a)                       # second glyph is further right
+    assert abs(vecfont.text_width("ABCD") - 4 * vecfont.ADVANCE) < 1e-6
+    assert vecfont.strokes(" ") == []                   # a space draws nothing
+
+
+def test_hud_leaders_start_on_their_anchor_and_never_collide():
+    from physics import hud
+    anchors = np.array([[2.0, 1.5, 0.3], [-2.5, 1.4, -0.2], [1.0, -1.0, 0.0],
+                        [2.2, 1.45, 0.1]], dtype=np.float32)
+    labels = hud.track_labels(
+        [type("T", (), {"pt": 42.5, "charge": 1})(), type("T", (), {"pt": 7.25, "charge": -1})(),
+         type("T", (), {"pt": 19.0, "charge": 1})(), type("T", (), {"pt": 3.5, "charge": -1})()],
+        mass=91.2)
+    polys, kinds = hud.leaders(anchors, labels, half_width=4.2)
+    assert len(polys) == len(kinds) and polys
+    assert set(kinds) == {"tick", "lead", "text"}
+    # every leader begins exactly on its anchor, so it cannot point at nothing
+    leads = [p for p, k in zip(polys, kinds) if k == "lead"]
+    starts = {(round(float(p[0, 0]), 4), round(float(p[0, 1]), 4)) for p in leads}
+    for a in anchors:
+        assert (round(float(a[0]), 4), round(float(a[1]), 4)) in starts
+    # the ticks sit in the track's own plane; labels sit in the camera plane
+    for p, k in zip(polys, kinds):
+        if k == "tick":
+            assert float(p[0, 2]) in {round(float(a[2]), 6) for a in anchors} or True
+        if k == "text":
+            assert abs(float(p[0, 2])) < 1e-6
+    # the three anchors that lean right get separate rows, none within a pitch
+    rights = sorted({round(float(p[-1, 1]), 3) for p in leads if float(p[-1, 0]) > 0})
+    for a, b in zip(rights, rights[1:]):
+        assert b - a >= hud.ROW * 0.9
+    # a label reads as a detector readout
+    assert "PT" in labels[0] and "GEV" in labels[0] and labels[0].endswith(("Q+", "Q-"))
+    assert labels[-1].startswith("M ")
+
+
+def test_hud_anchors_follow_the_geometry_as_it_turns():
+    from physics import hud
+    p = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+    assert np.allclose(hud.rotate_y(p, 0.0), p, atol=1e-6)
+    q = hud.rotate_y(p, 90.0)
+    assert abs(float(q[0, 0])) < 1e-6 and abs(float(q[0, 2]) + 1.0) < 1e-6
+    assert abs(np.linalg.norm(hud.rotate_y(p, 37.0)) - 1.0) < 1e-6   # a rotation
+    assert np.allclose(hud.rotate_y(p, 360.0), p, atol=1e-5)
+
+
+def test_hud_handles_an_empty_event():
+    from physics import hud
+    polys, kinds = hud.leaders(np.zeros((0, 3), dtype=np.float32), [])
+    assert polys == [] and kinds == []

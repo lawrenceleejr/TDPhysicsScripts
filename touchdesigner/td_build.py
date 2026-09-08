@@ -887,19 +887,48 @@ def build_lhc(dest=None, name="lhc"):
     _install_callbacks(sim, "lhc_sop.py")
     _line_geo(c, sim, "geo", -260, 0)
     _orbit(c, geo, default=9.0)
+    # The detector readout: dog-leg leaders and vector-font labels pinned to
+    # the highest-momentum tracks. It lives in its own Geometry COMP which is
+    # deliberately NOT orbited, so the labels stay upright and square to the
+    # camera while the event turns underneath; the callback rotates the
+    # anchors by the same angle so each leader stays on its track.
+    readout = _create(c, "geometryCOMP", "readout", -260, -200)
+    for child in list(readout.children):
+        try:
+            child.destroy()
+        except Exception:
+            pass
+    hud_sop = readout.create("scriptSOP", "hud")
+    try:
+        hud_sop.render = hud_sop.display = True
+    except Exception:
+        pass
+    _install_callbacks(hud_sop, "lhc_hud_sop.py")
+    _line_geo(c, hud_sop, "readout", -260, -200)
     cam = _camera(c, dist=12.0, tilt=-8.0)
     # Line art gets no cinema pass: ambient occlusion and a lens blur spread a
     # one-pixel track over nine and darken it to nothing (this scene measured
     # exactly black with the pass in). Depth here comes from the tracks' own
     # colour and the bloom.
-    r = _render(c, geo, cam, None)
+    r = _render(c, [geo, readout], cam, None)
     tr = _trails(c, r, amount=0.0)
     out = _glow(c, tr, size=12.0, x=640)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
+        hud_sop.cook(force=True)
     except Exception:
         pass
+    # One driver per scene, so the readout is pulled by the same frame-start
+    # hook: it follows the tracks only if it re-cooks every frame.
+    drv = c.op("cook_driver")
+    if drv is not None:
+        drv.text = drv.text.replace(
+            "                op(target).cook(force=True)\n",
+            "                op(target).cook(force=True)\n"
+            "                extra = c.op('readout/hud')\n"
+            "                if extra is not None:\n"
+            "                    extra.cook(force=True)\n")
     print(f"[td_build] built LHC Tracks -> {c.path}")
     return c
 
@@ -1202,6 +1231,138 @@ def _orbit(container, geo, default=8.0):
 # ---------------------------------------------------------------------------
 # Master build: every scene + a live switcher
 # ---------------------------------------------------------------------------
+def build_dashboard(dest=None, target=None, name="Dashboard", monitor=2):
+    """An operator's view at the top level: the show as it goes out, beside the
+    APC map.
+
+    Left, two thirds of the frame: exactly what the second display is being
+    sent -- the same TOP the Window COMP renders, so what you are watching is
+    the program feed and not a second render of it. Right: the control map,
+    as a picture, so a pad you have forgotten is a glance away rather than a
+    scroll through the README.
+
+    Also creates the Window COMP that puts the show on ``monitor``. Open it
+    from the COMP's own Open pulse (or its Perform-mode setting).
+    """
+    dest = dest or op("/")  # noqa: F821
+    c = _create(dest, "baseCOMP", name)
+    target_path = "../PhysicsVJ"
+    if target is not None:
+        target_path = target if isinstance(target, str) else target.path
+    elif dest.op("PhysicsVJ") is not None:
+        target_path = dest.op("PhysicsVJ").path
+
+    page = _custom_page(c, "Dashboard")
+    page.appendFloat("Split", label="Program / Map Split")[0].val = 0.66
+    _setpar(c, "Split", 0.66)
+    try:
+        c.par.Split.normMin, c.par.Split.normMax = 0.4, 0.9
+    except Exception:
+        pass
+    page.appendToggle("Showmap", label="Show APC Map")[0].val = True
+    page.appendPulse("Openwindow", label="Open Program Window")
+
+    # The program feed, fetched across the COMP boundary with a Select TOP.
+    prog = _create(c, "selectTOP", "program", -300, 0)
+    _setpar(prog, "top", target_path + "/out")
+    _set_res(prog)
+
+    # The window that goes to the other display, fed by the same TOP.
+    win = _try_create(dest, "windowCOMP", "program_window", 200, -200)
+    if win is not None:
+        _setpar_any(win, ("opcomp", "operator", "top"), target_path + "/out")
+        _setpar_any(win, ("monitor", "whichmonitor", "displayindex"), monitor, quiet=True)
+        _setpar_any(win, ("borders",), False, quiet=True)
+        _setpar_any(win, ("winw", "width"), MASTER_RES[0], quiet=True)
+        _setpar_any(win, ("winh", "height"), MASTER_RES[1], quiet=True)
+        opener = _create(c, "parameterexecuteDAT", "opener", -300, -300)
+        _setpar(opener, "op", c)
+        _setpar(opener, "pars", "Openwindow")
+        _setpar(opener, "onpulse", True)
+        _setpar(opener, "active", True)
+        opener.text = (
+            "def onPulse(par):\n"
+            f"    w = op('{win.path}')\n"
+            "    for pn in ('winopen', 'open'):\n"
+            "        try:\n"
+            "            getattr(w.par, pn).pulse()\n"
+            "            return\n"
+            "        except Exception:\n"
+            "            continue\n"
+        )
+
+    # The cheatsheet: the map, rasterised beside the SVG by tools/apc_map.py.
+    png = os.path.join(REPO, "docs", "apc_map.png")
+    sheet = _create(c, "moviefileinTOP", "apc_map", -300, -160)
+    _setpar_any(sheet, ("file",), png)
+    if not os.path.isfile(png):
+        print(f"[td_build] APC map image missing ({png}); run tools/apc_map.py")
+
+    # Lay the two panels onto one frame. A Transform TOP scales and shifts each
+    # into its own column; a Composite stacks them over a black ground.
+    def panel(src, nm, scale_expr, tx_expr, x, y):
+        t = _create(c, "transformTOP", nm, x, y)
+        _connect(src, t)
+        _set_res(t)
+        _setpar_any(t, ("extend", "extendleft"), "black", quiet=True)
+        for pn, ex in ((("s1", "scalex"), scale_expr), (("s2", "scaley"), scale_expr),
+                       (("t1", "translatex"), tx_expr)):
+            if isinstance(ex, str):
+                _bindexpr_any(t, pn, ex)
+            else:
+                _setpar_any(t, pn, ex)
+        return t
+
+    # The program keeps its aspect: it is scaled by the split and pushed left.
+    prog_t = panel(prog, "program_fit", "parent().par.Split",
+                   "-(1.0 - parent().par.Split.eval()) / 2.0", -100, 0)
+    # The map fills the remaining column, fitted by width and pushed right.
+    map_t = panel(sheet, "map_fit", "1.0 - parent().par.Split.eval()",
+                  "parent().par.Split.eval() / 2.0", -100, -160)
+
+    label = _create(c, "textTOP", "labels", -100, -320)
+    _set_res(label)
+    _setpar_any(label, ("text",), "PROGRAM  >  DISPLAY %d" % monitor, quiet=True)
+    _setpar_any(label, ("fontsizex", "fontsize"), 22, quiet=True)
+    _setpar_any(label, ("alignx",), "left", quiet=True)
+    _setpar_any(label, ("aligny",), "top", quiet=True)
+    _setpar_any(label, ("bgalpha",), 0.0, quiet=True)
+    for pn in ("fontcolorr", "fontcolorg", "fontcolorb"):
+        _setpar_any(label, (pn,), 0.75, quiet=True)
+
+    stack = _create(c, "compositeTOP", "stack", 120, 0)
+    _setpar(stack, "operand", "over")
+    _connect(label, stack, 0)
+    _connect(map_t, stack, 1)
+    _connect(prog_t, stack, 2)
+    _set_res(stack)
+
+    gate = _create(c, "switchTOP", "map_gate", 300, 0)
+    _connect(prog, gate, 0)          # map off: the program feed, full frame
+    _connect(stack, gate, 1)
+    _expr(gate, "index", "1 if parent().par.Showmap.eval() else 0")
+    _set_res(gate)
+
+    out = _create(c, "outTOP", "out", 480, 0)
+    _connect(gate, out)
+    _set_res(out)
+    try:
+        out.viewer = True
+    except Exception:
+        pass
+    for o in (prog, sheet, prog_t, map_t, stack, gate, out):
+        try:
+            o.cook(force=True)
+            err = o.errors()
+            if err:
+                print(f"[td_build] {o.path}: {err.strip()}")
+        except Exception as e:
+            print(f"[td_build] cook of {o.path} raised: {e}")
+    print(f"[td_build] built dashboard -> {c.path} (view 'out'; program feed "
+          f"{target_path}/out, window on monitor {monitor})")
+    return c
+
+
 def build_all(dest=None, name="PhysicsVJ", apc=True):
     dest = dest or op("/")  # noqa: F821
     base = _create(dest, "baseCOMP", name)
@@ -1424,6 +1585,8 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             build_apc(dest=dest, target=base)
         except Exception as e:
             print(f"[td_build] APC surface skipped: {e}")
+    # The operator's view: the program feed beside the control map.
+    _safe("dashboard", build_dashboard, dest, base)
 
     return base
 

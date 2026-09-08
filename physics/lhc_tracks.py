@@ -122,6 +122,7 @@ class LHCEventGenerator:
 
     def new_event(self) -> None:
         """Build a fresh collision: soft tracks + a few jets."""
+        self.event_index = getattr(self, "event_index", 0) + 1
         rng = self._rng
         tracks: list[Track] = []
         vertex = np.array([0.0, 0.0, rng.normal(0.0, 0.04)])

@@ -742,7 +742,10 @@ def test_every_explicit_resolution_sets_custom_mode():
     trails = src[src.index("def _trails("):src.index("def _mass_hud(")]
     assert "_connect(src, fb, 0)" in trails and "_set_res(fb)" in trails
     # every composite is pinned rather than inheriting from its smallest input
-    assert src.count('"compositeTOP"') == src.count("_set_res(comp)") + src.count("_set_res(label)") + src.count("_set_res(over)")
+    made = re.findall(r'(\w+)\s*=\s*_create\([^,]+,\s*"compositeTOP"', src)
+    assert made, "no composite TOPs found"
+    for var in set(made):
+        assert "_set_res(%s)" % var in src, var
 
 
 def test_master_chain_has_an_fx_bypass_and_is_cooked_at_build():
@@ -920,4 +923,71 @@ def test_every_risky_pass_measures_itself_and_the_health_check_repairs():
     # the bloom's black-point stage cannot push negatives into the composite
     glow = src[src.index("def _glow("):src.index("def _trails(")]
     assert '"blacklevel", threshold' in glow and "clamp" in glow
+
+
+def test_dashboard_shows_the_program_feed_beside_the_control_map():
+    """The top-level view is the same TOP the second display gets -- not a
+    second render of it -- next to the APC map as an image, and it degrades to
+    the plain program feed if the map is switched off."""
+    src = _src("touchdesigner", "td_build.py")
+    dash = src[src.index("def build_dashboard("):src.index("def build_all(")]
+    assert '"selectTOP"' in dash and 'target_path + "/out"' in dash
+    assert '"windowCOMP"' in dash and '"moviefileinTOP"' in dash
+    assert '"switchTOP"' in dash and "Showmap.eval()" in dash
+    assert '_create(c, "outTOP", "out"' in dash
+    # the window and the dashboard show the SAME source
+    assert dash.count('target_path + "/out"') >= 2
+    # build_all wires it up, guarded like the other extras
+    build_all = src[src.index("def build_all("):src.index("def _scene_feed(")]
+    assert '_safe("dashboard", build_dashboard, dest, base)' in build_all
+    # the cheatsheet image the dashboard loads is committed
+    png = os.path.join(ROOT, "docs", "apc_map.png")
+    assert os.path.isfile(png) and os.path.getsize(png) > 10000
+    tool = _src("tools", "apc_map.py")
+    assert "def write_png(" in tool and "apc_map.png" not in tool.split("def write_png")[0]
+
+
+def test_lhc_readout_is_a_second_geometry_that_does_not_orbit():
+    """The leaders and labels have to stay upright while the event turns, so
+    they live in their own Geometry COMP that is never orbited, and the
+    callback rotates the anchors instead. Both geometries render together."""
+    src = _src("touchdesigner", "td_build.py")
+    lhc = src[src.index("def build_lhc("):src.index("def _cd_channel_names(")]
+    assert '"geometryCOMP", "readout"' in lhc
+    assert "_render(c, [geo, readout], cam, None)" in lhc
+    assert "_orbit(c, readout" not in lhc                  # never orbited
+    assert '_install_callbacks(hud_sop, "lhc_hud_sop.py")' in lhc
+    assert "readout/hud" in lhc                            # driven every frame
+    cb = _src("touchdesigner", "callbacks", "lhc_hud_sop.py")
+    assert "hud.rotate_y(" in cb and 'fetch("hud_tracks"' in cb
+    sop = _src("touchdesigner", "callbacks", "lhc_sop.py")
+    assert 'scene.store("hud_tracks"' in sop and "track_labels(" in sop
+    # the readout stores on the scene COMP, never on the op that is cooking
+    assert "scriptOp.store(" not in sop
+
+
+def test_scene_looks_the_report_asked_for_are_wired():
+    """The batch of look changes, each where the show reads it."""
+    src = _src("touchdesigner", "td_build.py")
+    # N-Body: a spotlight and nothing else, and no ambient to give it away
+    nbody = src[src.index("def build_nbody("):src.index("def build_particles(")]
+    assert "_spot_rig(" in nbody and "_light_rig(" not in nbody
+    assert '"ambr"' in nbody
+    spot = src[src.index("def _spot_rig("):src.index("USE_GLSL_MAT = False")]
+    assert '"lighttype"' in spot and '"coneangle"' in spot and '"conedelta"' in spot
+    # the raymarch takes the smooth pulse, never a phase ramp that wraps
+    assert 'rex["beat"], rex["pulse"]' in src
+    frag = _src("touchdesigner", "shaders", "raymarch.frag")
+    assert "uBar" not in frag and "uPulse" in frag
+    # RD inverts through a toggle the shader reads
+    assert '("uInvert", "int(parent().par.Invert.eval())")' in src
+    assert "uniform float uInvert;" in _src("touchdesigner", "shaders", "rd_color.frag")
+    # Ising inverts in its callback
+    assert '_p(scriptOp, "Invert", True)' in _src("touchdesigner", "callbacks", "ising_top.py")
+    # the hydrogen cloud morphs between orbitals and is depth-cued
+    hy = _src("touchdesigner", "callbacks", "hydrogen_chop.py")
+    assert "HydrogenState.blend(" in hy and 'appendFloat("Morphtime"' in hy
+    assert 'appendFloat("Depthcue"' in hy
+    ns = _load_apc()
+    assert ("sim", "Morphtime", 0.5, 25.0) in ns["FADER_MAP"]["hydrogen"]
 
