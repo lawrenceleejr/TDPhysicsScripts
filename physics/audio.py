@@ -41,6 +41,7 @@ class AudioAnalyzer:
         self.release = float(release)
         self.gain = float(gain)
         self._env = {k: 0.0 for k in BAND_NAMES + ["level"]}
+        self._env2 = {}
         self._bins_cache = {}  # (n, sr) -> (window, freqs, band_masks)
 
     def _bins(self, n):
@@ -56,11 +57,17 @@ class AudioAnalyzer:
         return cached
 
     def _smooth(self, key, target):
+        # Asymmetric one-pole (fast up, slow down), then a second, gentler pole
+        # over it: the first gives lively response, the second takes out the
+        # frame-to-frame jitter that reads as flicker on screen.
         prev = self._env[key]
         coeff = self.attack if target > prev else self.release
         v = prev + coeff * (target - prev)
         self._env[key] = v
-        return v
+        v2 = self._env2.get(key, v)
+        v2 += 0.5 * (v - v2)
+        self._env2[key] = v2
+        return v2
 
     def analyze(self, samples):
         x = np.ascontiguousarray(samples, dtype=np.float32).ravel()
@@ -77,6 +84,10 @@ class AudioAnalyzer:
             energy = float(np.sqrt(np.mean(mag[m] ** 2))) if m.any() else 0.0
             out[name] = self._smooth(name, min(energy * self.gain, 4.0))
         out["level"] = self._smooth("level", min(level_raw, 4.0))
+        # The raw (unsmoothed) low band, for the kick detector: onsets need
+        # the sharp edge the envelope follower deliberately rounds off.
+        lo = masks[0][1]
+        out["low_raw"] = float(np.sqrt(np.mean(mag[lo] ** 2))) if lo.any() else 0.0
         return out
 
     def spectrum(self, samples, n_out=64, fmin=30.0, fmax=16000.0):
@@ -96,6 +107,144 @@ class AudioAnalyzer:
         if peak > 1e-6:
             bars /= peak
         return bars.astype(np.float32)
+
+
+class AutoLevel:
+    """Per-channel automatic gain: no input-level fiddling before a set.
+
+    Each channel tracks a slow-decaying peak of its own recent history; the
+    normalised value is ``x / peak``, so a quiet DJ feed and a hot one land in
+    the same 0..1 range and a kick reads as ~1 whatever the gain upstream.
+    The peak rises quickly (a loud new passage re-calibrates in a few frames)
+    and falls slowly (``fall`` per second, ~4 s to halve by default), so a
+    quiet breakdown does not immediately look like a drop.
+    """
+
+    def __init__(self, names, rise=0.35, fall=0.17, floor=1e-3):
+        self.rise = float(rise)
+        self.fall = float(fall)
+        self.floor = float(floor)
+        self.peak = {n: self.floor for n in names}
+
+    def reset(self):
+        for n in self.peak:
+            self.peak[n] = self.floor
+
+    def normalize(self, name, x, dt):
+        x = max(float(x), 0.0)
+        p = self.peak.get(name, self.floor)
+        if x > p:
+            p += self.rise * (x - p)
+        else:
+            p *= np.exp(-self.fall * float(dt))
+        p = max(p, self.floor)
+        self.peak[name] = p
+        return min(x / p, 1.5)
+
+
+class KickTracker:
+    """Onset detector tuned for four-on-the-floor kicks, with tempo lock.
+
+    Feed it the (auto-levelled) low-band energy once per frame. A beat is a
+    positive energy jump (spectral flux on the lows) that clears an adaptive
+    threshold -- mean plus ``k`` standard deviations of the last ~1.5 s of
+    flux -- outside a refractory gap, and, once a tempo is known, near the
+    time the next beat is expected (a very strong onset anywhere still
+    re-locks). Tempo is the median of recent intervals, folded into an EDM
+    range. :meth:`phase` gives a continuous beat phase for smooth pulsation
+    and :attr:`envelope` a fast-attack, exponential-decay flash.
+    """
+
+    def __init__(self, sensitivity=1.6, refractory=0.22, min_bpm=90.0,
+                 max_bpm=180.0, decay=0.22, memory=90):
+        self.sensitivity = float(sensitivity)
+        self.refractory = float(refractory)
+        self.min_bpm, self.max_bpm = float(min_bpm), float(max_bpm)
+        self.decay = float(decay)
+        self._flux = deque(maxlen=int(memory))
+        self._prev = 0.0
+        self._t = 0.0
+        self._last_beat = None
+        self._beats = deque(maxlen=12)
+        self.bpm = 0.0
+        self.envelope = 0.0
+        self.strength = 0.0
+
+    def reset(self):
+        self._flux.clear()
+        self._beats.clear()
+        self._prev = 0.0
+        self._last_beat = None
+        self.bpm = 0.0
+        self.envelope = 0.0
+
+    def hit(self):
+        """A manual beat (a performer's pad): flash now, re-anchor the phase."""
+        self.envelope = 1.0
+        self._last_beat = self._t
+
+    @property
+    def period(self):
+        return 60.0 / self.bpm if self.bpm > 0 else 0.0
+
+    def _fold(self, bpm):
+        while bpm and bpm < self.min_bpm:
+            bpm *= 2.0
+        while bpm and bpm > self.max_bpm:
+            bpm /= 2.0
+        return bpm
+
+    def update(self, low, dt):
+        low = float(low)
+        dt = float(dt)
+        self._t += dt
+        self.envelope *= np.exp(-dt / self.decay) if self.decay > 0 else 0.0
+        flux = max(0.0, low - self._prev)
+        self._prev = low
+        hist = np.fromiter(self._flux, dtype=np.float64) if self._flux else np.zeros(0)
+        mean = float(hist.mean()) if hist.size else 0.0
+        std = float(hist.std()) if hist.size > 4 else 0.0
+        thresh = mean + self.sensitivity * std + 0.02
+        self._flux.append(flux)
+
+        since = (self._t - self._last_beat) if self._last_beat is not None else 1e9
+        if since < self.refractory or flux < thresh or low < 0.25:
+            self.strength = 0.0
+            return False
+        # Tempo gating: accept near the expected beat, or when very strong.
+        if self.period > 0 and hist.size > 20:
+            off = abs(((since / self.period) + 0.5) % 1.0 - 0.5) * self.period
+            strong = flux > mean + 3.0 * std + 0.05
+            if off > 0.28 * self.period and not strong:
+                self.strength = 0.0
+                return False
+        # A beat.
+        if self._last_beat is not None:
+            interval = since
+            if 60.0 / self.max_bpm * 0.5 <= interval <= 60.0 / self.min_bpm * 2.5:
+                self._beats.append(interval)
+        self._last_beat = self._t
+        self.envelope = 1.0
+        self.strength = min((flux - thresh) / max(thresh, 1e-6), 3.0)
+        if len(self._beats) >= 3:
+            arr = np.fromiter(self._beats, dtype=np.float64)
+            med = float(np.median(arr))
+            good = arr[np.abs(arr - med) < 0.2 * med]
+            if good.size:
+                self.bpm = self._fold(60.0 / float(np.median(good)))
+        return True
+
+    def phase(self):
+        """Beat phase in [0, 1): 0 on the beat, predicted from the tempo."""
+        if self._last_beat is None or self.period <= 0:
+            return 0.0
+        return ((self._t - self._last_beat) / self.period) % 1.0
+
+    def pulse(self):
+        """A smooth 0..1 pulsation peaking on each (predicted) beat."""
+        if self._last_beat is None or self.period <= 0:
+            return self.envelope
+        return 0.5 + 0.5 * float(np.cos(2.0 * np.pi * self.phase()))
 
 
 class BeatTracker:

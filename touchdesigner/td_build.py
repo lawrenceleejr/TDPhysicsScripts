@@ -92,6 +92,23 @@ SCENES = [
 # ---------------------------------------------------------------------------
 # Low-level helpers (all defensive)
 # ---------------------------------------------------------------------------
+# Whole-screen FX toggles on PhysicsVJ, four per row of the APC's upper-right
+# quadrant; the post shader reads them as uFxA..uFxD. Must match
+# callbacks/apc_mini.FX_NAMES (a contract test checks).
+FX_NAMES = ["Invert", "Edges", "Posterize", "Pixelate",
+            "Mirror", "Mono", "Solarize", "Fisheye",
+            "Tiles", "Shake", "Ascii", "Blur",
+            "Kaleidofx", "Rgbboost", "Strobe", "Negflash"]
+
+# A word or two per scene, shown in big caps by the TITLE button.
+SCENE_TITLES = {
+    "ising": "PHASE TRANSITION", "nbody": "GRAVITY", "flow": "CURL FLOW",
+    "softbody": "SOFT MATTER", "lhc": "PROTON COLLISION", "opendata": "ATLAS DATA",
+    "rd": "REACTION DIFFUSION", "sdf": "DISTANCE FIELDS", "pops": "PARTICLE STORM",
+    "hydrogen": "QUANTUM HYDROGEN", "feynman": "FEYNMAN PATHS",
+}
+
+
 def _setpar(o, name, value):
     """Set a parameter if it exists; never raise."""
     try:
@@ -893,7 +910,7 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
     # Watch the show + the surface's own pars; repaint LEDs / handle Reset.
     watch = _create(c, "parameterexecuteDAT", "statewatch", 100, 200)
     _setpar(watch, "op", target_path)
-    _setpar(watch, "pars", "Scene Nextscene Crossfade Freerunall")
+    _setpar(watch, "pars", "Scene Nextscene Crossfade Freerunall Freeze Blackout " + " ".join(FX_NAMES))
     _setpar(watch, "valuechange", True)
     _setpar(watch, "active", True)
     watch.text = (
@@ -996,8 +1013,23 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         page.appendToggle("Clickpunch", label="Click / Space = Punch live scene")
         _setpar(base, "Clickpunch", True)
         page.appendPulse("Punch", label="Punch live scene")
+        page.appendToggle("Freeze", label="Freeze (stop every sim)")
+        _setpar(base, "Freeze", False)
+        page.appendToggle("Blackout", label="Blackout")
+        _setpar(base, "Blackout", False)
+        page.appendPulse("Title", label="Show Scene Title")
+        page.appendFloat("Titlehold", label="Title Hold (s)")[0].val = 4.0
     except Exception as e:
         print(f"[td_build] top-level control page setup hit a snag: {e}")
+
+    # Whole-screen FX toggles (the APC's upper-right quadrant).
+    try:
+        fxq = base.appendCustomPage("FX")
+        for fx in FX_NAMES:
+            fxq.appendToggle(fx, label=fx)
+            _setpar(base, fx, False)
+    except Exception as e:
+        print(f"[td_build] FX page setup hit a snag: {e}")
 
     # Audio + tempo engines, built first so scenes/shaders can bind to them.
     reactor = build_reactor(dest=base)
@@ -1047,9 +1079,10 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         # or when Freerun All is on. Keeps it to one live sim except mid-fade.
         _expr(
             scene, "Active",
-            f"int((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade.eval() < 1) "
+            f"int(not parent().par.Freeze.eval() and "
+            f"((parent().par.Scene.menuIndex == {i} and parent().par.Crossfade.eval() < 1) "
             f"or (parent().par.Nextscene.menuIndex == {i} and parent().par.Crossfade.eval() > 0) "
-            f"or parent().par.Freerunall.eval())",
+            f"or parent().par.Freerunall.eval()))",
         )
         out = scene.op("out")
         if out is not None:
@@ -1094,8 +1127,16 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _connect(mixed, bypass, 1)
     _expr(bypass, "index", "0 if parent().par.Fx.eval() else 1")
 
-    final = _create(base, "nullTOP", "out", 760, 0)
-    _connect(bypass, final)
+    # Ink-bleed scene title (TITLE button) over the show, then the blackout
+    # level; both sit after the Fx bypass so they work with post FX off too.
+    titled, ink = _title_overlay(base, bypass, scene_names, x=760)
+    master = _create(base, "levelTOP", "master_level", 920, 0)
+    _connect(titled, master)
+    _expr(master, "opacity", "0 if parent().par.Blackout.eval() else 1")
+    _set_res(master)
+
+    final = _create(base, "nullTOP", "out", 1080, 0)
+    _connect(master, final)
     _set_res(final)
     try:
         final.viewer = True
@@ -1110,7 +1151,11 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             o.cook(force=True)
         except Exception as e:
             print(f"[td_build] cook of {o.path} raised: {e}")
-    for o in (switch_a, switch_b, cross, mixed, post, bypass, final):
+    try:
+        ink.cook(force=True)     # surface a title-shader compile error now
+    except Exception as e:
+        print(f"[td_build] cook of {ink.path} raised: {e}")
+    for o in (switch_a, switch_b, cross, mixed, post, bypass, ink, master, final):
         try:
             err = o.errors()
             if err:
@@ -1123,6 +1168,9 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _reactive_bindings(base, reactor, tempo)
     try:
         base.store("scene_names", scene_names)
+        base.store("scene_titles", [SCENE_TITLES.get(n, n.upper()) for n in scene_names])
+        base.store("title_t0", -1e9)
+        base.store("title_toff", -1e9)
     except Exception:
         pass
     _punch_controls(base)
@@ -1276,7 +1324,7 @@ def _glsl_vec4(top, slot, uname, values):
 
 def _react_exprs(reactor):
     """Expression strings reading the Reactor's analyze CHOP (or constants)."""
-    keys = ("bass", "mid", "high", "level", "beat", "bpm")
+    keys = ("bass", "mid", "high", "level", "beat", "kick", "pulse", "bpm")
     if reactor is None or reactor.op("analyze") is None:
         return {k: 0.0 for k in keys}
     base = reactor.op("analyze").path
@@ -1585,22 +1633,87 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
 
 
 def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
-    """The master GLSL post chain: beat punch, chromatic aberration, optional
-    kaleidoscope, scanline shimmer and vignette. Returns the processed TOP."""
+    """The master GLSL post chain: beat punch, chromatic aberration, scanline
+    shimmer, vignette, tonemap -- plus the sixteen whole-screen FX toggles on
+    the show's FX page. Six packed vec4 uniforms (see post_fx.frag)."""
     rex = _react_exprs(reactor)
     tex = _tempo_exprs(tempo)
     post = _create(container, "glslTOP", name, x, y)
     _setpar(post, "pixeldat", _shader_dat(container, name + "_src", "post_fx.frag", x, y - 170))
     _connect(src, post, 0)
     _set_res(post)         # the master output is always MASTER_RES
-    _glsl_uniforms(post, [
-        ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
-        ("uBeat", rex["beat"]), ("uHigh", rex["high"]), ("uBar", tex["bar"]),
-        ("uKaleido", "parent().par.Kaleido"),
-        ("uRGBShift", "parent().par.Rgbshift"),
-        ("uPunch", "parent().par.Punch"),
-    ])
+    _glsl_vec4(post, 0, "uAudio", (rex["level"], rex["beat"], rex["high"], tex["bar"]))
+    _glsl_vec4(post, 1, "uLook", ("parent().par.Kaleido", "parent().par.Rgbshift",
+                                  "parent().par.Punch", "absTime.seconds"))
+    for slot, uname in enumerate(("uFxA", "uFxB", "uFxC", "uFxD"), start=2):
+        names = FX_NAMES[(slot - 2) * 4:(slot - 1) * 4]
+        _glsl_vec4(post, slot, uname, tuple(f"int(parent().par.{n}.eval())" for n in names))
     return post
+
+
+def _title_overlay(container, src, scene_names, name="title", x=760, y=0):
+    """The TITLE button: the live scene's physics title in big caps, soaked in
+    like ink on wet paper, composited over ``src``. Returns (gated TOP, ink TOP).
+
+    A Text TOP renders the words (transparent background); a GLSL TOP bleeds
+    them (ink_title.frag) from 'title_t0' / 'title_toff' in the show's storage
+    (set by the Title pulse, the APC and the T key); a Switch shows the plain
+    feed whenever no title is up so none of it cooks between titles.
+    """
+    text = _create(container, "textTOP", name + "_text", x, y - 320)
+    _set_res(text)
+    _setpar_any(text, ("text",), "", quiet=True)
+    _expr(text, "text",
+          "parent().fetch('scene_titles', [])[int(parent().par.Scene.menuIndex)] "
+          "if int(parent().par.Scene.menuIndex) < len(parent().fetch('scene_titles', [])) else ''")
+    _setpar_any(text, ("fontsizex", "fontsize"), 150, quiet=True)
+    _setpar_any(text, ("bold",), True, quiet=True)
+    _setpar_any(text, ("alignx",), "center", quiet=True)
+    _setpar_any(text, ("aligny",), "center", quiet=True)
+    _setpar_any(text, ("wordwrap",), True, quiet=True)
+    _setpar_any(text, ("bgalpha",), 0.0, quiet=True)
+    for pn in ("fontcolorr", "fontcolorg", "fontcolorb"):
+        _setpar_any(text, (pn,), 1.0, quiet=True)
+    _setpar_any(text, ("fontalpha",), 1.0, quiet=True)
+
+    ink = _create(container, "glslTOP", name + "_ink", x, y - 160)
+    _set_res(ink)
+    _setpar(ink, "pixeldat", _shader_dat(container, name + "_src", "ink_title.frag", x - 160, y - 320))
+    _connect(text, ink, 0)
+    # bleed: 0 -> 1 over 1.2 s from the moment the title was asked for;
+    # fade: up in 0.25 s, down over 0.6 s after the release time.
+    _glsl_vec4(ink, 0, "uInk", (
+        "max(0.0, min(1.0, (absTime.seconds - parent().fetch('title_t0', -1e9)) / 1.2))",
+        "max(0.0, min(1.0, (absTime.seconds - parent().fetch('title_t0', -1e9)) / 0.25, "
+        "1.0 - (absTime.seconds - parent().fetch('title_toff', -1e9)) / 0.6))",
+        "absTime.seconds", 0.0))
+
+    over = _create(container, "compositeTOP", name + "_over", x + 160, y - 160)
+    _setpar(over, "operand", "over")
+    _connect(ink, over, 0)
+    _connect(src, over, 1)
+    _set_res(over)
+
+    gate = _create(container, "switchTOP", name, x + 160, y)
+    _connect(src, gate, 0)   # no title up: the plain feed, nothing else cooks
+    _connect(over, gate, 1)
+    _expr(gate, "index", "1 if absTime.seconds < parent().fetch('title_toff', -1e9) + 0.7 else 0")
+    _set_res(gate)
+
+    # The show's own Title pulse.
+    te = _create(container, "parameterexecuteDAT", name + "r", -200, -410)
+    _setpar(te, "op", container)
+    _setpar(te, "pars", "Title")
+    _setpar(te, "onpulse", True)
+    _setpar(te, "active", True)
+    te.text = (
+        "def onPulse(par):\n"
+        "    c = par.owner\n"
+        "    now = absTime.seconds\n"
+        "    c.store('title_t0', now)\n"
+        "    c.store('title_toff', now + float(c.par.Titlehold.eval()))\n"
+    )
+    return gate, ink
 
 
 def _punch_controls(base):
@@ -1647,12 +1760,16 @@ def _punch_controls(base):
     # 3) the space bar
     kb = _try_create(base, "keyboardinDAT", "keys", -400, -660)
     if kb is not None:
-        _setpar_any(kb, ("keys",), "space", quiet=True)
+        _setpar_any(kb, ("keys",), "space t", quiet=True)
         _setpar(kb, "active", True)
         kb.text = code + (
             "def onKey(dat, key, character, alt, lAlt, rAlt, ctrl, lCtrl, rCtrl,\n"
             "          shift, lShift, rShift, state, time, cmd, lCmd, rCmd):\n"
-            "    if state and int(me.parent().par.Clickpunch.eval()):\n"
+            "    if not state:\n"
+            "        return\n"
+            "    if key == 't':\n"
+            "        me.parent().par.Title.pulse()\n"
+            "    elif int(me.parent().par.Clickpunch.eval()):\n"
             "        punch()\n"
         )
 

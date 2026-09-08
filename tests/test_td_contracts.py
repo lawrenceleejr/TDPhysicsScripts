@@ -159,10 +159,19 @@ class _Op:
             setattr(self.par, name, _Par(self, name, val))
 
     def op(self, name):
-        return self.children.get(name.lstrip("./"))
+        o = self
+        for part in name.lstrip("./").split("/"):
+            o = o.children.get(part) if o is not None else None
+        return o
 
     def parent(self):
         return None
+
+    def store(self, key, val):
+        self.__dict__.setdefault("_storage", {})[key] = val
+
+    def fetch(self, key, default=None):
+        return self.__dict__.setdefault("_storage", {}).get(key, default)
 
 
 class _LedOut:
@@ -180,17 +189,48 @@ def _fake_show(n_scenes, palettes):
                                                      ("Nextevent", 0), ("Reseed", 0), ("Pointsize", 0.02)])
         scenes[name] = _Op("/PhysicsVJ/" + name, {"sim": sim},
                            pars=[("Trail", 0.0), ("Orbit", 0.0), ("Palette", 0), ("Reseed", 0)])
+    fx = ["Invert", "Edges", "Posterize", "Pixelate", "Mirror", "Mono", "Solarize", "Fisheye",
+          "Tiles", "Shake", "Ascii", "Blur", "Kaleidofx", "Rgbboost", "Strobe", "Negflash"]
+    analyze = _Op("/PhysicsVJ/Reactor/analyze", pars=[("Beatsens", 1.6), ("Mute", 0),
+                                                       ("Resetlevels", 0), ("Hit", 0)])
+    tempo = _Op("/PhysicsVJ/Tempo/tempo", pars=[("Bpm", 120.0), ("Resetphase", 0)])
+    scenes["Reactor"] = _Op("/PhysicsVJ/Reactor", {"analyze": analyze})
+    scenes["Tempo"] = _Op("/PhysicsVJ/Tempo", {"tempo": tempo})
     show = _Op("/PhysicsVJ", scenes, pars=[("Scene", 0), ("Nextscene", 1), ("Crossfade", 0.0),
-                                            ("Freerunall", 0), ("Cut", 0)])
+                                            ("Freerunall", 0), ("Cut", 0), ("Freeze", 0),
+                                            ("Blackout", 0), ("Title", 0), ("Titlehold", 4.0)]
+                                            + [(f, 0) for f in fx])
     return show
+
+
+class _Clock:
+    seconds = 100.0
 
 
 def _load_apc(show=None):
     src = _src("touchdesigner", "callbacks", "apc_mini.py")
     src = src.replace('_REPO = r""', '_REPO = r"%s"' % ROOT, 1)
-    ns = {"__name__": "cb_apc_mini", "op": (lambda path: show)}
+    ns = {"__name__": "cb_apc_mini", "op": (lambda path: show), "absTime": _Clock}
     exec(compile(src, "apc_mini.py", "exec"), ns)
     return ns
+
+
+def test_apc_fx_names_match_the_builder_and_the_shader():
+    """The upper-right quadrant toggles pars the builder appends and the post
+    shader reads in the same four-per-vec4 order."""
+    ns = _load_apc()
+    td_build = importlib.import_module("touchdesigner.td_build")
+    assert ns["FX_NAMES"] == td_build.FX_NAMES and len(ns["FX_NAMES"]) == 16
+    frag = _src("touchdesigner", "shaders", "post_fx.frag")
+    for u in ("uAudio", "uLook", "uFxA", "uFxB", "uFxC", "uFxD"):
+        assert "uniform vec4 %s;" % u in frag, u
+    src = _src("touchdesigner", "td_build.py")
+    assert '"uFxA", "uFxB", "uFxC", "uFxD"' in src
+    # every FX pad is a toggle on the show (lower-case names would be new pars)
+    assert all(n[0].isupper() and n[1:].islower() for n in ns["FX_NAMES"])
+    # every scene has a title, and the title shader ships
+    assert set(td_build.SCENE_TITLES) == set(_scene_names())
+    assert all(t == t.upper() and 1 <= len(t.split()) <= 2 for t in td_build.SCENE_TITLES.values())
 
 
 def _surface(show):
@@ -215,36 +255,178 @@ def test_cut_and_freerun_buttons_are_transport_not_arming():
     assert show.par.Freerunall.val == 0
 
 
-def test_track_buttons_one_to_six_arm_deck_b():
+def test_lower_left_quadrant_cuts_scenes_and_shift_arms_deck_b():
+    """Scene pads are the 4x4 lower-left block in reading order; SHIFT + pad
+    arms deck B instead. Nothing outside the block can change Scene."""
     show = _fake_show(11, 8)
     ns = _load_apc(show)
     apc = _surface(show)
-    for i in range(ns["N_ARM"]):
-        ns["on_midi"](apc, "Note On", 1, ns["TRACK_BTN"][i], 127)
-        assert show.par.Nextscene.val == i
-
-
-def test_grid_pad_cuts_scene_and_sets_palette():
-    show = _fake_show(11, 8)
-    ns = _load_apc(show)
-    apc = _surface(show)
-    col, row = 3, 5
-    ns["on_midi"](apc, "Note On", 1, row * 8 + col, 100)
-    assert show.par.Scene.val == col
-    holder = show.op(ns["SCENE_NAMES"][col]).op("sim")
-    assert holder.par.Palette.val == row
-    # note-off / zero-velocity presses do nothing
-    ns["on_midi"](apc, "Note On", 1, 0, 0)
-    assert show.par.Scene.val == col
-
-
-def test_scene_buttons_launch_scenes_past_the_grid():
-    show = _fake_show(11, 8)
-    ns = _load_apc(show)
-    apc = _surface(show)
-    for k, idx in enumerate(range(ns["N_GRID_COLS"], ns["N_SCENES"])):
-        ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][2 + k], 127)
+    for idx in range(ns["N_SCENES"]):
+        col, row = idx % 4, 3 - idx // 4
+        ns["on_midi"](apc, "Note On", 1, row * 8 + col, 100)
         assert show.par.Scene.val == idx
+    # the 4x4 block only holds 16; scenes fill 11 of them, the rest are inert
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 3, 100)          # row 0 col 3 = slot 15
+    assert show.par.Scene.val == ns["N_SCENES"] - 1
+    # SHIFT held: arm deck B
+    ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)
+    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 2, 100)          # scene 2
+    assert show.par.Nextscene.val == 2 and show.par.Scene.val == ns["N_SCENES"] - 1
+    ns["on_midi"](apc, "Note Off", 1, ns["SHIFT"], 0)
+    # note-off / zero-velocity presses do nothing
+    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 0, 0)
+    assert show.par.Scene.val == ns["N_SCENES"] - 1
+
+
+def test_lower_right_quadrant_sets_palettes_and_tempo_level_tools():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    show.par.Scene.val = 1
+    holder = show.op("nbody").op("sim")
+    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 6, 100)          # row 3 col 6 = palette 2
+    assert holder.par.Palette.val == 2
+    ns["on_midi"](apc, "Note On", 1, 2 * 8 + 5, 100)          # row 2 col 5 = palette 5
+    assert holder.par.Palette.val == 5
+    analyze = show.op("Reactor/analyze")
+    tempo = show.op("Tempo/tempo")
+    ns["on_midi"](apc, "Note On", 1, 1 * 8 + 6, 100)          # BPM x2
+    assert tempo.par.Bpm.val == 240.0
+    ns["on_midi"](apc, "Note On", 1, 1 * 8 + 7, 100)          # BPM /2
+    assert tempo.par.Bpm.val == 120.0
+    ns["on_midi"](apc, "Note On", 1, 1 * 8 + 5, 100)          # SYNC
+    assert tempo.par.Resetphase.pulses == 1 and analyze.par.Hit.pulses == 1
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 4, 100)          # AUTO RESET
+    assert analyze.par.Resetlevels.pulses == 1
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 6, 100)          # SENS+
+    assert abs(analyze.par.Beatsens.val - 1.75) < 1e-9
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 5, 100)          # SENS-
+    assert abs(analyze.par.Beatsens.val - 1.6) < 1e-9
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 7, 100)          # MUTE
+    assert analyze.par.Mute.val == 1
+    # tap tempo: three taps 0.5 s apart -> 120 bpm
+    for k in range(3):
+        _Clock.seconds = 200.0 + 0.5 * k
+        ns["on_midi"](apc, "Note On", 1, 1 * 8 + 4, 100)
+    assert abs(tempo.par.Bpm.val - 120.0) < 1e-6
+    assert tempo.par.Resetphase.pulses == 4
+
+
+def test_upper_right_quadrant_toggles_whole_screen_fx_and_shift_clears():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    # top row: Invert Edges Posterize Pixelate on cols 4..7 of row 7
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 4, 100)
+    assert show.par.Invert.val == 1
+    ns["on_midi"](apc, "Note On", 1, 5 * 8 + 6, 100)          # row 5 col 6 = Ascii
+    assert show.par.Ascii.val == 1
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 5, 100)          # Edges
+    assert show.par.Edges.val == 1
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 4, 100)          # Invert off again
+    assert show.par.Invert.val == 0
+    assert show.par.Scene.val == 0                            # FX never change the scene
+    ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)
+    ns["on_midi"](apc, "Note On", 1, 4 * 8 + 7, 100)          # shift + any FX = clear all
+    assert all(getattr(show.par, f).val == 0 for f in ns["FX_NAMES"])
+    ns["on_midi"](apc, "Note Off", 1, ns["SHIFT"], 0)
+    # the round CLEAR FX button does the same without shift
+    show.par.Mono.val = 1
+    ns["on_midi"](apc, "Note On", 1, ns["TRACK_BTN"][4], 127)
+    assert show.par.Mono.val == 0
+
+
+def test_upper_left_quadrant_performs_on_the_live_scene():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    show.par.Scene.val = 3                                    # softbody
+    sim = show.op("softbody").op("sim")
+    sim.par.Punch = _Par(sim, "Punch", 0)
+    sim.par.Punchstrength = _Par(sim, "Punchstrength", 1.0)
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 0, 100)          # PUNCH
+    assert sim.par.Punch.pulses == 1
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 1, 100)          # BIG PUNCH
+    assert sim.par.Punch.pulses == 2 and sim.par.Punchstrength.val == 3.0
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 3, 100)          # RESET
+    assert sim.par.Reset.pulses == 1
+    ns["on_midi"](apc, "Note On", 1, 6 * 8 + 0, 100)          # PULSE = manual beat
+    assert show.op("Reactor/analyze").par.Hit.pulses == 1
+    ns["on_midi"](apc, "Note On", 1, 6 * 8 + 1, 100)          # FREEZE
+    assert show.par.Freeze.val == 1
+    ns["on_midi"](apc, "Note On", 1, 6 * 8 + 1, 100)
+    assert show.par.Freeze.val == 0
+    ns["on_midi"](apc, "Note On", 1, 4 * 8 + 2, 100)          # BLACKOUT
+    assert show.par.Blackout.val == 1
+    ns["on_midi"](apc, "Note On", 1, 4 * 8 + 1, 100)          # SCENE >
+    assert show.par.Scene.val == 4
+    ns["on_midi"](apc, "Note On", 1, 4 * 8 + 0, 100)          # SCENE <
+    assert show.par.Scene.val == 3
+    ns["on_midi"](apc, "Note On", 1, 5 * 8 + 3, 100)          # PALETTE >
+    assert sim.par.Palette.val == 1
+    # ORBIT FLIP negates the camera spin
+    show.op("softbody").par.Orbit.val = 8.0
+    ns["on_midi"](apc, "Note On", 1, 5 * 8 + 1, 100)
+    assert show.op("softbody").par.Orbit.val == -8.0
+    # TRAIL MAX and STROBE act while held and undo on release
+    show.op("softbody").par.Trail.val = 0.3
+    ns["on_midi"](apc, "Note On", 1, 5 * 8 + 0, 100)
+    assert show.op("softbody").par.Trail.val > 0.9
+    ns["on_midi"](apc, "Note Off", 1, 5 * 8 + 0, 0)
+    assert show.op("softbody").par.Trail.val == 0.3
+    ns["on_midi"](apc, "Note On", 1, 4 * 8 + 3, 100)
+    assert show.par.Strobe.val == 1
+    ns["on_midi"](apc, "Note Off", 1, 4 * 8 + 3, 0)
+    assert show.par.Strobe.val == 0
+    # VARIANT steps the scene's own menu (N-Body initial condition)
+    show.par.Scene.val = 1
+    nb = show.op("nbody").op("sim")
+    nb.par.Initial = _Par(nb, "Initial", 0, menu=["a", "b", "c"])
+    ns["on_midi"](apc, "Note On", 1, 5 * 8 + 2, 100)
+    assert nb.par.Initial.val == 1
+    for _ in range(2):
+        ns["on_midi"](apc, "Note On", 1, 5 * 8 + 2, 100)
+    assert nb.par.Initial.val == 0                            # wraps
+
+
+def test_title_button_holds_while_pressed_and_lingers_on_a_tap():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    _Clock.seconds = 300.0
+    ns["on_midi"](apc, "Note On", 1, 6 * 8 + 3, 100)          # TITLE down
+    assert show.fetch("title_t0") == 300.0 and show.fetch("title_toff") > 1e8
+    _Clock.seconds = 300.1
+    ns["on_midi"](apc, "Note Off", 1, 6 * 8 + 3, 0)           # quick tap
+    assert abs(show.fetch("title_toff") - (300.1 + ns["TITLE_TAP_SECONDS"])) < 1e-9
+    _Clock.seconds = 310.0
+    ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][7], 127)  # round TITLE button
+    _Clock.seconds = 313.0
+    ns["on_midi"](apc, "Note Off", 1, ns["SCENE_BTN"][7], 0)   # long hold -> off now
+    assert show.fetch("title_toff") == 313.0
+    # the show's own pulse helper
+    ns["title_pulse"](show, 2.0)
+    assert show.fetch("title_toff") == 315.0
+
+
+def test_faders_follow_the_live_scenes_map():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    fm = ns["FADER_MAP"]
+    assert set(fm) == set(ns["SCENE_NAMES"]) and all(len(v) == 8 for v in fm.values())
+    # scenes with a Trail get Trail / Orbit on faders 1-2; the ranges are sane
+    for name, specs in fm.items():
+        for spec in specs:
+            if spec is not None:
+                where, par, lo, hi = spec
+                assert lo < hi, (name, par)
+    show.par.Scene.val = 0                                    # ising: fader 4 = Temperature
+    show.op("ising").op("sim").par.Temperature = _Par(None, "Temperature", 2.27)
+    ns["on_midi"](apc, "Control Change", 1, ns["FADER_CC"][3], 0)
+    assert show.op("ising").op("sim").par.Temperature.val == 1.5
+    ns["on_midi"](apc, "Control Change", 1, ns["FADER_CC"][0], 127)   # unmapped: no-op
+    assert show.op("ising").par.Trail.val == 0.0
 
 
 def test_refire_pulses_the_live_scenes_signature_event():
