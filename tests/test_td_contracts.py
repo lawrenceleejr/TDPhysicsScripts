@@ -874,3 +874,24 @@ def test_reactivity_is_switchable_subtle_and_smoothed():
     hydrogen = src[src.index("def build_bohmian("):]
     assert "_light_rig(" in hydrogen                    # lights for the fallback
 
+
+def test_palette_pads_glow_in_the_palettes_own_colour():
+    """Each palette's LED is chosen from the APC's 128-colour table as the
+    bright, saturated entry nearest the palette's most saturated stop, so the
+    pad reads as the palette it selects (never a grey, never a dim twin)."""
+    ns = _load_apc()
+    assert len(ns["APC_RGB"]) == 128
+    for name in ns["_PALETTES"]:
+        rep = ns["palette_rgb"](name)
+        v = ns["PAL_COLOR"][name]
+        lr, lg, lb = ns["_rgb_of"](ns["APC_RGB"][v])
+        assert max(lr, lg, lb) >= 0.85, (name, v)                 # bright
+        assert max(lr, lg, lb) - min(lr, lg, lb) >= 0.35, (name, v)   # hued
+        # the dominant channel agrees (an orange palette gets an orange LED)
+        assert max(range(3), key=lambda i: rep[i]) == max(range(3), key=lambda i: (lr, lg, lb)[i]), name
+    assert ns["nearest_led"]((0.0, 0.6, 0.9)) in (36, 37, 78)      # sky blue
+    assert ns["nearest_led"]((0.4, 1.0, 0.0)) in (16, 17, 73, 74, 75, 85, 86, 98, 110)
+    # the map draws its palette dots from the same representative colour
+    map_src = _src("tools", "apc_map.py")
+    assert 'ns["palette_rgb"](name)' in map_src and "PAL_HEX" not in map_src
+

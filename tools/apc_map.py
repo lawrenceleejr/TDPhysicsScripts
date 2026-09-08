@@ -38,10 +38,13 @@ FILL = {
     "action": "#26262b", "fx": "#241d33", "scene": "#2d1f17",
     "palette": "#2a2416", "tool": "#14282c", "round": "#1a1a1f", "empty": "#17171b",
 }
-PAL_HEX = {
-    "inferno": "#f0842a", "magma": "#c9273f", "plasma": "#d64fa3", "cyber": "#1fb3c9",
-    "synth": "#7a4fa8", "acid": "#3fb64a", "ice": "#5aa7e0", "sigma": "#c94a2a",
-}
+
+
+def pal_hex(ns, name):
+    """The palette's representative colour, the same one the LED snaps to."""
+    r, g, b = ns["palette_rgb"](name)
+    return "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
+
 
 PAD, GAP = 72, 8
 ORIGIN_X, ORIGIN_Y = 36, 80
@@ -116,7 +119,7 @@ def render_svg(ns):
             name = scene_names[val]
             parts.append(_pad_svg(x, y, "scene", scene_labels.get(name, name.upper()), "scene %d" % val))
         elif what == "palette":
-            parts.append(_pad_svg(x, y, "palette", palettes[val], "palette %d" % val, dot=PAL_HEX.get(palettes[val])))
+            parts.append(_pad_svg(x, y, "palette", palettes[val], "palette %d" % val, dot=pal_hex(ns, palettes[val])))
         elif what == "action":
             sub = "held" if val in ns["MOMENTARY"] else None
             parts.append(_pad_svg(x, y, "action", labels[val], sub))

@@ -50,19 +50,19 @@
 <text x="312.0" y="514.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RAYMARCH</text>
 <text x="312.0" y="528.0" font-size="8.5" font-weight="400" fill="#e08a58" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 7</text>
 <rect x="356.0" y="480.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="417.0" cy="491.0" r="4" fill="#7a4fa8"/>
+<circle cx="417.0" cy="491.0" r="4" fill="#e602b4"/>
 <text x="392.0" y="514.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >synth</text>
 <text x="392.0" y="528.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 4</text>
 <rect x="436.0" y="480.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="497.0" cy="491.0" r="4" fill="#3fb64a"/>
+<circle cx="497.0" cy="491.0" r="4" fill="#66ff00"/>
 <text x="472.0" y="514.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >acid</text>
 <text x="472.0" y="528.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 5</text>
 <rect x="516.0" y="480.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="577.0" cy="491.0" r="4" fill="#5aa7e0"/>
+<circle cx="577.0" cy="491.0" r="4" fill="#49aefa"/>
 <text x="552.0" y="514.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ice</text>
 <text x="552.0" y="528.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 6</text>
 <rect x="596.0" y="480.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="657.0" cy="491.0" r="4" fill="#c94a2a"/>
+<circle cx="657.0" cy="491.0" r="4" fill="#fa5433"/>
 <text x="632.0" y="514.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >sigma</text>
 <text x="632.0" y="528.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 7</text>
 <rect x="36.0" y="400.0" width="72" height="72" rx="6" fill="#2d1f17" stroke="#e08a58" stroke-width="1"/>
@@ -78,19 +78,19 @@
 <text x="312.0" y="434.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SOFT BODY</text>
 <text x="312.0" y="448.0" font-size="8.5" font-weight="400" fill="#e08a58" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 3</text>
 <rect x="356.0" y="400.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="417.0" cy="411.0" r="4" fill="#f0842a"/>
+<circle cx="417.0" cy="411.0" r="4" fill="#fa9110"/>
 <text x="392.0" y="434.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >inferno</text>
 <text x="392.0" y="448.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 0</text>
 <rect x="436.0" y="400.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="497.0" cy="411.0" r="4" fill="#c9273f"/>
+<circle cx="497.0" cy="411.0" r="4" fill="#ef6d68"/>
 <text x="472.0" y="434.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >magma</text>
 <text x="472.0" y="448.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 1</text>
 <rect x="516.0" y="400.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="577.0" cy="411.0" r="4" fill="#d64fa3"/>
+<circle cx="577.0" cy="411.0" r="4" fill="#f3eb25"/>
 <text x="552.0" y="434.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >plasma</text>
 <text x="552.0" y="448.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 2</text>
 <rect x="596.0" y="400.0" width="72" height="72" rx="6" fill="#2a2416" stroke="#d9a450" stroke-width="1"/>
-<circle cx="657.0" cy="411.0" r="4" fill="#1fb3c9"/>
+<circle cx="657.0" cy="411.0" r="4" fill="#059ae8"/>
 <text x="632.0" y="434.0" font-size="11.0" font-weight="600" fill="#ecebe6" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >cyber</text>
 <text x="632.0" y="448.0" font-size="8.5" font-weight="400" fill="#d9a450" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 3</text>
 <rect x="36.0" y="320.0" width="72" height="72" rx="6" fill="#26262b" stroke="#c9c9c9" stroke-width="1"/>
