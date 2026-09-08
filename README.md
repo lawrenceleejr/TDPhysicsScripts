@@ -170,8 +170,9 @@ knot; `Next Form` steps through them), `Speed`, `Twist`, `Zoom`, `Detail`,
 **LHC Tracks** — `B Field (T)`, `Seconds/Event`, `Grow Time`, `World Scale`,
 `Palette`, `New Collision`.
 
-**Feynman** — two pages, because the geometry and the animation are separate
-operators. On `geo/lines`: `Field` (six shipped fields — three 16:9, plus 21:9,
+**Feynman** — scalar (Higgs) lines are drawn **dashed**, per convention;
+fermions solid, bosons wavy. Two pages, because the geometry and the animation
+are separate operators. On `geo/lines`: `Field` (six shipped fields — three 16:9, plus 21:9,
 9:16 and square), `World Width`, `Vertex Marks`, `Rebuild`. On `state`:
 `Line Lifetime` (the dial that matters — how long a line stays lit, as a share
 of one traverse; 0.4 keeps the pattern turning over, 1.0 fills the frame and
@@ -201,7 +202,10 @@ N-Body and the particle scenes ship with it on for an instant VJ look.
 actually contribute to the mix cook (so it's a single live sim except
 mid-fade). Each scene also has an `Orbit` (deg/sec) camera-spin control.
 Performance controls on the same page: `Punch` (hit the live scene), `Freeze`
-(stop every sim on its current frame), `Blackout`, and **`Title`** — the live
+(stop every sim on its current frame), `Blackout`, **`Audio Reactive`** (off =
+the visuals ignore the music entirely; the APC's Mute pad flips it) with
+`Reactive Amount` (0.6 by default — subtle; 1 is the full light show), and
+**`Title`** — the live
 scene's physics title (**GRAVITY**, **PHASE TRANSITION**, **PROTON
 COLLISION**, …) soaks onto the screen in big caps like ink on wet paper, holds
 for `Title Hold` seconds, then fades. The **T** key does the same. An **`FX`**
@@ -271,9 +275,12 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
   chromatic aberration, optional kaleidoscope, scanline shimmer, vignette) are
   all GLSL TOPs. Shader source lives in `touchdesigner/shaders/` — readable,
   hot-swappable `.frag`/`.vert` files, not buried in nodes.
-- **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`, and a
-  **`Post FX`** toggle — off routes the raw scene mix straight to `out`, so a
-  shader problem on a new TouchDesigner build can never black out a show.
+- **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`,
+  **`Dark Mode`** (on by default: crushed blacks, a heavier mid gamma, a
+  tighter vignette and `Exposure` 0.85, so every scene reads as dark-mode UI
+  rather than a bright screen) and a **`Post FX`** toggle — off routes the raw
+  scene mix straight to `out`, so a shader problem on a new TouchDesigner
+  build can never black out a show.
   The **`FX` page** is sixteen whole-screen toggles the same shader applies:
   Invert, Edges (Sobel, in the scene's own colour), Posterize, Pixelate,
   Mirror, Mono, Solarize, Fisheye, Tiles, Shake, ASCII (5×5 glyph cells by

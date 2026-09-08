@@ -40,7 +40,8 @@
 #   LOWER-RIGHT cols 4-7 rows 0-3   PALETTES + TEMPO / LEVEL tools
 #       row 3:  palettes 0-3            row 2: palettes 4-7
 #       row 1:  TAP  SYNC  BPM x2  BPM /2       (tempo engine; TAP ticks)
-#       row 0:  AUTO RESET  SENS-  SENS+  MUTE  (audio reactor)
+#       row 0:  AUTO RESET  SENS-  SENS+  MUTE  (audio reactor; MUTE = the
+#               show's Reactive switch, red while the visuals ignore the music)
 #
 #   SCENE BUTTONS (round, right column, notes 112..119)  SCENE SELECT
 #       button k cuts to scene k (0-7); SHIFT + button k cuts to scene 8+k.
@@ -173,12 +174,76 @@ BTN_REFIRE = TRACK_BTN[1]     # with SHIFT held
 CH_DIM, CH_MID, CH_BRIGHT, CH_PULSE, CH_BLINK = 2, 4, 7, 10, 14
 CH_LEVELS = [2, 3, 4, 5, 6, 7]     # solid brightness steps for reactive pads
 
-# APC 128-colour palette indices.
-PAL_COLOR = {
-    "inferno": 9, "magma": 5, "plasma": 53, "cyber": 37,
-    "synth": 49, "acid": 21, "ice": 41, "sigma": 60,
-}
+# The APC mini mk2's 128 LED colours (velocity -> sRGB), from Akai's protocol
+# table. Used to pick, for each show palette, the pad colour closest to that
+# palette's most saturated colour -- so a pad glows in the colour you will see.
+APC_RGB = [
+    0x000000, 0x1E1E1E, 0x7F7F7F, 0xFFFFFF, 0xFF4C4C, 0xFF0000, 0x590000, 0x190000,
+    0xFFBD6C, 0xFF5400, 0x591D00, 0x271B00, 0xFFFF4C, 0xFFFF00, 0x595900, 0x191900,
+    0x88FF4C, 0x54FF00, 0x1D5900, 0x142B00, 0x4CFF4C, 0x00FF00, 0x005900, 0x001900,
+    0x4CFF5E, 0x00FF19, 0x00590D, 0x001902, 0x4CFF88, 0x00FF55, 0x00591D, 0x001F12,
+    0x4CFFB7, 0x00FF99, 0x005935, 0x001912, 0x4CC3FF, 0x00A9FF, 0x004152, 0x001019,
+    0x4C88FF, 0x0055FF, 0x001D59, 0x000819, 0x4C4CFF, 0x0000FF, 0x000059, 0x000019,
+    0x874CFF, 0x5400FF, 0x190064, 0x0F0030, 0xFF4CFF, 0xFF00FF, 0x590059, 0x190019,
+    0xFF4C87, 0xFF0054, 0x59001D, 0x220013, 0xFF1500, 0x993500, 0x795100, 0x436400,
+    0x033900, 0x005735, 0x00547F, 0x0000FF, 0x00454F, 0x2500CC, 0x7F7F7F, 0x202020,
+    0xFF0000, 0xBDFF2D, 0xAFED06, 0x64FF09, 0x108B00, 0x00FF87, 0x00A9FF, 0x002AFF,
+    0x3F00FF, 0x7A00FF, 0xB21A7D, 0x402100, 0xFF4A00, 0x88E106, 0x72FF15, 0x00FF00,
+    0x3BFF26, 0x59FF71, 0x38FFCC, 0x5B8AFF, 0x3151C6, 0x877FE9, 0xD31DFF, 0xFF005D,
+    0xFF7F00, 0xB9B000, 0x90FF00, 0x835D07, 0x392B00, 0x144C10, 0x0D5038, 0x15152A,
+    0x16205A, 0x693C1C, 0xA8000A, 0xDE513D, 0xD86A1C, 0xFFE126, 0x9EE12F, 0x67B50F,
+    0x1E1E30, 0xDCFF6B, 0x80FFBD, 0x9A99FF, 0x8E66FF, 0x404040, 0x757575, 0xE0FFFF,
+    0xA00000, 0x350000, 0x1AD000, 0x074200, 0xB9B000, 0x3F3100, 0xB35F00, 0x4B1502,
+]
+
+
+def _rgb_of(v):
+    return ((v >> 16) & 255) / 255.0, ((v >> 8) & 255) / 255.0, (v & 255) / 255.0
+
+
+def palette_rgb(name):
+    """A palette's representative colour: its most saturated stop, weighted a
+    little toward the bright end (never the near-black paper the ramps start
+    on, never the near-white they finish on)."""
+    try:
+        import numpy as _np
+        t = _np.linspace(0.25, 0.97, 25)
+        rgb = palette.colorize(t, name)
+        chroma = rgb.max(axis=1) - rgb.min(axis=1)
+        score = chroma * (0.6 + 0.4 * rgb.max(axis=1))
+        best = rgb[int(_np.argmax(score))]
+        return float(best[0]), float(best[1]), float(best[2])
+    except Exception:
+        return (1.0, 1.0, 1.0)
+
+
+def nearest_led(rgb):
+    """The APC velocity whose LED colour is closest in hue and saturation to
+    ``rgb`` (0..1 floats), among the colours bright enough to read on stage.
+    Compares normalised colour directions so a dark palette stop still finds
+    its hue rather than a grey."""
+    r, g, b = rgb
+    m = max(r, g, b, 1e-6)
+    want = (r / m, g / m, b / m)
+    best, best_d = DEFAULT_COLOR, 1e9
+    for v, hexv in enumerate(APC_RGB):
+        lr, lg, lb = _rgb_of(hexv)
+        lm = max(lr, lg, lb)
+        if lm < 0.6:
+            continue                              # too dim to be a pad colour
+        if lm - min(lr, lg, lb) < 0.35:
+            continue                              # greys and whites: no hue
+        have = (lr / lm, lg / lm, lb / lm)
+        # hue/saturation distance, plus a nudge toward the brighter LED when
+        # two entries share a hue (the table has dim twins of most colours)
+        d = sum((a - c) ** 2 for a, c in zip(want, have)) + 0.15 * (1.0 - lm)
+        if d < best_d:
+            best, best_d = v, d
+    return best
+
+
 DEFAULT_COLOR = 3          # white
+PAL_COLOR = {name: nearest_led(palette_rgb(name)) for name in _PALETTES}
 COL_WHITE, COL_RED, COL_YELLOW, COL_GREEN, COL_CYAN, COL_ICE, COL_PURPLE = 3, 5, 13, 21, 37, 41, 49
 COL_ACTION, COL_ACTION_ON = COL_WHITE, COL_YELLOW
 COL_FX_OFF, COL_FX_ON = COL_PURPLE, COL_GREEN
@@ -503,7 +568,10 @@ def perform(t, action, apc=None, pressed=True):
         v = _getf(a, "Beatsens", 1.6) + (0.15 if action == "sensup" else -0.15)
         _setf(a, "Beatsens", min(max(v, 1.05), 3.0))
     elif action == "mute":
-        _toggle(_analyze(t), "Mute")
+        if _has(t, "Reactive"):
+            _toggle(t, "Reactive")          # the show's audio-reactivity switch
+        else:
+            _toggle(_analyze(t), "Mute")
     elif action == "ledreset" and apc is not None:
         reset(apc)
 
@@ -681,10 +749,18 @@ def _action_state(t, name, st):
     if name == "trailmax":
         return 1 if "trail" in st.get("held", {}) else 0
     if name == "mute":
-        return _geti(_analyze(t), "Mute", 0)
+        return _is_muted(t)
     if name == "freerun":
         return _geti(t, "Freerunall", 0)
     return 0
+
+
+def _is_muted(t):
+    """Audio reactivity off: the show's Reactive toggle is down, or the
+    Reactor is muted."""
+    if _has(t, "Reactive") and not _geti(t, "Reactive", 1):
+        return 1
+    return _geti(_analyze(t), "Mute", 0)
 
 
 def _base_frame(apc, t, st):
@@ -759,7 +835,7 @@ def _reactive(t, frame, st):
     a = _analyze(t)
     beat = _chan(a, "beat")
     level = _chan(a, "level")
-    muted = _geti(a, "Mute", 0)
+    muted = _is_muted(t)
     phase = _chan(_tempo(t), "beat")
     out = dict(frame)
 

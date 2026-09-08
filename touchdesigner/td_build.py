@@ -342,7 +342,7 @@ def _instance_channels(geo, chop):
 # ---------------------------------------------------------------------------
 # Materials
 # ---------------------------------------------------------------------------
-def _soft_mat(container, name="soft_mat", x=-200, y=-180, alpha=0.45):
+def _soft_mat(container, name="soft_mat", x=-200, y=-180, alpha=0.65):
     """Additive, depth-free Constant MAT: the look for clouds of small points.
 
     Overlapping instances add up instead of occluding, so a dense cloud reads
@@ -438,6 +438,37 @@ def _floor(container, name="floor", x=-260, y=-260, size=60.0, height=-3.2):
                    base=(0.05, 0.05, 0.06))
     _setpar(geo, "material", mat)
     return geo
+
+
+def _ensure_visible(container, geo, out, what, x=-260, y=-260):
+    """Cook the finished scene once; if it comes out black, swap ``geo``'s
+    material for the lit PBR one and say so. The additive soft MAT rendered
+    black on one build (both the storm and the hydrogen cloud), and a blank
+    scene in a set is worse than a lit one."""
+    try:
+        import numpy as _np
+    except Exception:
+        return
+    def mean_of(top):
+        for _ in range(3):
+            top.cook(force=True)
+        arr = top.numpyArray()
+        return float(_np.nanmean(arr[..., :3]))
+    try:
+        before = mean_of(out)
+    except Exception as e:
+        print(f"[td_build] {what}: visibility check unreadable ({e})")
+        return
+    if before >= 0.002:
+        return
+    mat = _pbr_mat(container, "lit_fallback_mat", x, y, metallic=0.0, roughness=0.55)
+    _setpar(geo, "material", mat)
+    try:
+        after = mean_of(out)
+    except Exception:
+        after = float("nan")
+    print(f"[td_build] {what}: soft material rendered black (mean {before:.4f}); "
+          f"switched to the lit material (mean {after:.4f})")
 
 
 def _cinematic(container, render, cam, focus, name="cine", x=380, y=200,
@@ -1170,6 +1201,11 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         _setpar(base, "Blackout", False)
         page.appendPulse("Title", label="Show Scene Title")
         page.appendFloat("Titlehold", label="Title Hold (s)")[0].val = 4.0
+        page.appendToggle("Reactive", label="Audio Reactive")
+        _setpar(base, "Reactive", True)
+        ra = page.appendFloat("Reactamount", label="Reactive Amount")[0]
+        ra.val = 0.6
+        base.par.Reactamount.normMin, base.par.Reactamount.normMax = 0.0, 1.0
     except Exception as e:
         print(f"[td_build] top-level control page setup hit a snag: {e}")
 
@@ -1184,6 +1220,14 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
 
     # Audio + tempo engines, built first so scenes/shaders can bind to them.
     reactor = build_reactor(dest=base)
+    # The show's Reactive switch / amount drive the Reactor's Depth: off = the
+    # visuals ignore the music entirely, otherwise every reactive channel is
+    # scaled (0.6 by default: subtle, not a light show).
+    try:
+        _bindexpr(reactor.op("analyze"), "Depth",
+                  "parent(2).par.Reactamount.eval() if parent(2).par.Reactive.eval() else 0.0")
+    except Exception as e:
+        print(f"[td_build] Reactive binding skipped: {e}")
     reactor.nodeX, reactor.nodeY = -600, 460
     tempo = build_tempo(dest=base)
     tempo.nodeX, tempo.nodeY = -600, 360
@@ -1195,6 +1239,12 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     fxpage.appendFloat("Punch", label="Beat Punch")[0].val = 1.0
     fxpage.appendToggle("Wavevis", label="Waveform Overlay")[0].val = False
     fxpage.appendToggle("Fx", label="Post FX (off = raw mix)")[0].val = True
+    fxpage.appendToggle("Darkmode", label="Dark Mode (crushed blacks, low exposure)")[0].val = True
+    fxpage.appendFloat("Exposure", label="Exposure")[0].val = 0.85
+    try:
+        base.par.Exposure.normMin, base.par.Exposure.normMax = 0.3, 2.0
+    except Exception:
+        pass
     for pn, mx in (("Kaleido", 1.0), ("Rgbshift", 8.0), ("Punch", 2.0)):
         try:
             getattr(base.par, pn).normMin = 0.0
@@ -1810,6 +1860,9 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     for slot, uname in enumerate(("uFxA", "uFxB", "uFxC", "uFxD"), start=2):
         names = FX_NAMES[(slot - 2) * 4:(slot - 1) * 4]
         _glsl_vec4(post, slot, uname, tuple(f"int(parent().par.{n}.eval())" for n in names))
+    # Tone: exposure, black crush, vignette strength, dark mode on/off.
+    _glsl_vec4(post, 6, "uTone", ("parent().par.Exposure", 0.03, 1.0,
+                                  "int(parent().par.Darkmode.eval())"))
     return post
 
 
@@ -2021,13 +2074,13 @@ def _light_rig(container, reactor=None, x=-200, y=300, shadows=False, env=True):
     fill = light("fill", (-9.0, 1.0, 6.0), (0.3, 0.45, 0.9), 120, dimmer=0.25)
     rim = light("rim", (-2.0, 5.0, -10.0), (0.7, 0.85, 1.0), 240, dimmer=1.8)
     if reactor is not None:
-        _bindexpr(rim, "dimmer", f"1.8 + 2.5*{rex['beat']}")
+        _bindexpr(rim, "dimmer", f"1.8 + 1.2*{rex['beat']}")
     # The practical: a saturated accent that orbits low around the scene.
     prac = light("practical", (6.0, -2.0, 6.0), (1.0, 0.35, 0.2), 360, dimmer=1.2)
     _expr(prac, "tx", "8.0 * math.cos(absTime.seconds * 0.21)")
     _expr(prac, "tz", "8.0 * math.sin(absTime.seconds * 0.21)")
     if reactor is not None:
-        _bindexpr(prac, "dimmer", f"0.8 + 1.5*{rex['bass']}")
+        _bindexpr(prac, "dimmer", f"0.8 + 0.9*{rex['bass']}")
     lights = [key, fill, rim, prac]
     if env:
         e = _studio_env(container, x=x, y=y - 480)
@@ -2143,7 +2196,7 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000, use_pops=Fa
         _setpar(sim, "Mode", "flow")
         _setpar(sim, "Palette", palette)
         _setpar(sim, "Count", min(int(count), 40000))
-        _setpar(sim, "Pointsize", 0.011)
+        _setpar(sim, "Pointsize", 0.03)
         _setpar(sim, "Speed", 2.6)
         _setpar(sim, "Scale", 0.32)
         _setpar(sim, "Evolve", 0.22)
@@ -2170,6 +2223,11 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000, use_pops=Fa
         _ensure_active(c)      # no driver needed (GPU, time-dependent), but
     else:                      # build_all still binds Active to the decks
         _cook_driver(c, c.op("sim"))
+        try:
+            c.op("sim").cook(force=True)
+        except Exception:
+            pass
+    _ensure_visible(c, geo, out, "storm")
     print(f"[td_build] built particle storm -> {c.path} "
           f"({'POPs' if built_pops else 'curl-noise engine, 40k additive points'})")
     return c
@@ -2196,7 +2254,7 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
     _install_callbacks(sim, "hydrogen_chop.py")
     _setpar(sim, "Palette", palette)
     _setpar(sim, "Count", count)
-    _setpar(sim, "Pointsize", 0.018)
+    _setpar(sim, "Pointsize", 0.04)
 
     # Tens of thousands of tiny additive points: each electron is a faint dot,
     # where they crowd the glow adds up, the long trails draw the circulation
@@ -2205,7 +2263,10 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
     geo, _ = _instanced_geo(c, sim, "geo", (1.0, 1.0, 1.0), -260, 0, look="soft", rows=3, cols=5)
     _orbit(c, geo, default=6.0)            # slow camera spin to read the 3D shape
     cam = _camera(c, dist=18.0, tilt=-10.0)
-    r = _render(c, geo, cam, None)
+    # The additive cloud ignores lights; the rig is here for the lit fallback
+    # _ensure_visible switches to if the cloud renders black on this build.
+    lights = _light_rig(c, dest_reactor(dest), shadows=False)
+    r = _render(c, geo, cam, lights)
     tr = _trails(c, r, amount=0.94)         # trails turn circulation into rings
     out = _glow(c, tr, size=26.0, x=640, threshold=0.25)
     _cook_driver(c, sim)
@@ -2213,5 +2274,6 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
         sim.cook(force=True)
     except Exception:
         pass
+    _ensure_visible(c, geo, out, "hydrogen")
     print(f"[td_build] built Bohmian hydrogen -> {c.path}")
     return c

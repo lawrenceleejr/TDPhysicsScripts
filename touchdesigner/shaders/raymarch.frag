@@ -207,7 +207,7 @@ void main() {
         col += neon(fract(tt + 0.5), pal) * fres * 1.5 * occ;   // rim
     }
     col += neon(fract(T * 0.04), pal) * glow * 0.05 * (0.5 + uLevel);
-    col *= 1.0 + uBeat * 0.6;
+    col *= 1.0 + uBeat * 0.3;
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));
 }

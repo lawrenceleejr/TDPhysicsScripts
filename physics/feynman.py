@@ -61,6 +61,25 @@ LEGAL_VERTICES = frozenset(
 )
 
 
+SCALAR = 2                 # etype index of an 'h' (Higgs / scalar) line
+DASH_FIELD_UNITS = 8.0     # target dash pitch, in the field's own units
+DASH_GAP = 0.6             # gap length as a share of a dash
+
+
+def dash_spans(length_field_units: float):
+    """Dash a segment of the given length: (start, end) fractions along it.
+
+    An odd number of dashes so both ends are ink (the line meets its vertices),
+    gaps DASH_GAP of a dash, at least three dashes so even a stub reads as
+    dashed rather than as a dot.
+    """
+    n = max(3, int(round(length_field_units / DASH_FIELD_UNITS)))
+    if n % 2 == 0:
+        n += 1
+    d = 1.0 / (n + DASH_GAP * (n - 1))
+    return [(k * d * (1.0 + DASH_GAP), k * d * (1.0 + DASH_GAP) + d) for k in range(n)]
+
+
 class Field:
     """A loaded field: vertices, lines, and the polyline each line is drawn as."""
 
@@ -354,6 +373,18 @@ class FeynmanShow:
 
         for i in range(f.n_edges):
             pts = place(f.polys[i])
+            if int(f.etype[i]) == SCALAR and len(pts) == 2:
+                # A scalar propagator is drawn dashed (the Feynman convention
+                # for a Higgs line): several short polylines along the same
+                # segment, each carrying its own 'along' span so the flood
+                # still lights the line progressively from either end.
+                for a0, a1 in dash_spans(float(np.linalg.norm(pts[1] - pts[0])) / s):
+                    seg = np.stack([pts[0] + (pts[1] - pts[0]) * a0,
+                                    pts[0] + (pts[1] - pts[0]) * a1]).astype(np.float32)
+                    polys.append(seg)
+                    owner.append(np.full(2, i, dtype=np.int32))
+                    along.append(np.asarray([a0, a1], dtype=np.float32))
+                continue
             polys.append(pts)
             owner.append(np.full(len(pts), i, dtype=np.int32))
             along.append(np.linspace(0.0, 1.0, len(pts), dtype=np.float32))

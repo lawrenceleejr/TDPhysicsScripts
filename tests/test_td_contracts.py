@@ -202,7 +202,8 @@ def _fake_show(n_scenes, palettes):
     scenes["Tempo"] = _Op("/PhysicsVJ/Tempo", {"tempo": tempo})
     show = _Op("/PhysicsVJ", scenes, pars=[("Scene", 0), ("Nextscene", 1), ("Crossfade", 0.0),
                                             ("Freerunall", 0), ("Cut", 0), ("Freeze", 0),
-                                            ("Blackout", 0), ("Title", 0), ("Titlehold", 4.0)]
+                                            ("Blackout", 0), ("Title", 0), ("Titlehold", 4.0),
+                                            ("Reactive", 1), ("Reactamount", 0.6)]
                                             + [(f, 0) for f in fx])
     return show
 
@@ -397,8 +398,10 @@ def test_lower_right_quadrant_sets_palettes_and_tempo_level_tools():
     assert abs(analyze.par.Beatsens.val - 1.75) < 1e-9
     ns["on_midi"](apc, "Note On", 1, 0 * 8 + 5, 100)          # SENS-
     assert abs(analyze.par.Beatsens.val - 1.6) < 1e-9
-    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 7, 100)          # MUTE
-    assert analyze.par.Mute.val == 1
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 7, 100)          # MUTE = the show's Reactive switch
+    assert show.par.Reactive.val == 0 and analyze.par.Mute.val == 0
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 7, 100)
+    assert show.par.Reactive.val == 1
     # tap tempo: three taps 0.5 s apart -> 120 bpm
     for k in range(3):
         _Clock.seconds = 200.0 + 0.5 * k
@@ -851,4 +854,44 @@ def test_input_dats_get_their_scripts_through_callbacks_not_text():
     assert '_safe("punch / title controls", _punch_controls, base)' in build_all
     assert '_safe("reactive bindings", _reactive_bindings' in build_all
     assert '_safe("scene health", _scene_health, outs)' in build_all
+
+
+def test_reactivity_is_switchable_subtle_and_smoothed():
+    """The show has a Reactive switch and amount that drive the Reactor's
+    Depth; the Reactor eases the beat flash in; the post punch is gentle;
+    dark mode is the default tone."""
+    src = _src("touchdesigner", "td_build.py")
+    assert 'appendToggle("Reactive"' in src and 'appendFloat("Reactamount"' in src
+    assert 'reactor.op("analyze"), "Depth"' in src
+    assert 'appendToggle("Darkmode"' in src and '"uTone"' in src
+    cb = _src("touchdesigner", "callbacks", "audio_chop.py")
+    assert 'appendFloat("Depth"' in cb and "beat_s" in cb and "KickTracker(decay=0.3)" in cb
+    post = _src("touchdesigner", "shaders", "post_fx.frag")
+    assert "uniform vec4 uTone;" in post and "uBeat * 0.035" in post
+    # the soft scenes get a lit fallback if they render black
+    for scene in ("storm", "hydrogen"):
+        assert '_ensure_visible(c, geo, out, "%s")' % scene in src
+    hydrogen = src[src.index("def build_bohmian("):]
+    assert "_light_rig(" in hydrogen                    # lights for the fallback
+
+
+def test_palette_pads_glow_in_the_palettes_own_colour():
+    """Each palette's LED is chosen from the APC's 128-colour table as the
+    bright, saturated entry nearest the palette's most saturated stop, so the
+    pad reads as the palette it selects (never a grey, never a dim twin)."""
+    ns = _load_apc()
+    assert len(ns["APC_RGB"]) == 128
+    for name in ns["_PALETTES"]:
+        rep = ns["palette_rgb"](name)
+        v = ns["PAL_COLOR"][name]
+        lr, lg, lb = ns["_rgb_of"](ns["APC_RGB"][v])
+        assert max(lr, lg, lb) >= 0.85, (name, v)                 # bright
+        assert max(lr, lg, lb) - min(lr, lg, lb) >= 0.35, (name, v)   # hued
+        # the dominant channel agrees (an orange palette gets an orange LED)
+        assert max(range(3), key=lambda i: rep[i]) == max(range(3), key=lambda i: (lr, lg, lb)[i]), name
+    assert ns["nearest_led"]((0.0, 0.6, 0.9)) in (36, 37, 78)      # sky blue
+    assert ns["nearest_led"]((0.4, 1.0, 0.0)) in (16, 17, 73, 74, 75, 85, 86, 98, 110)
+    # the map draws its palette dots from the same representative colour
+    map_src = _src("tools", "apc_map.py")
+    assert 'ns["palette_rgb"](name)' in map_src and "PAL_HEX" not in map_src
 
