@@ -40,7 +40,8 @@
 #   LOWER-RIGHT cols 4-7 rows 0-3   PALETTES + TEMPO / LEVEL tools
 #       row 3:  palettes 0-3            row 2: palettes 4-7
 #       row 1:  TAP  SYNC  BPM x2  BPM /2       (tempo engine; TAP ticks)
-#       row 0:  AUTO RESET  SENS-  SENS+  MUTE  (audio reactor)
+#       row 0:  AUTO RESET  SENS-  SENS+  MUTE  (audio reactor; MUTE = the
+#               show's Reactive switch, red while the visuals ignore the music)
 #
 #   SCENE BUTTONS (round, right column, notes 112..119)  SCENE SELECT
 #       button k cuts to scene k (0-7); SHIFT + button k cuts to scene 8+k.
@@ -503,7 +504,10 @@ def perform(t, action, apc=None, pressed=True):
         v = _getf(a, "Beatsens", 1.6) + (0.15 if action == "sensup" else -0.15)
         _setf(a, "Beatsens", min(max(v, 1.05), 3.0))
     elif action == "mute":
-        _toggle(_analyze(t), "Mute")
+        if _has(t, "Reactive"):
+            _toggle(t, "Reactive")          # the show's audio-reactivity switch
+        else:
+            _toggle(_analyze(t), "Mute")
     elif action == "ledreset" and apc is not None:
         reset(apc)
 
@@ -681,10 +685,18 @@ def _action_state(t, name, st):
     if name == "trailmax":
         return 1 if "trail" in st.get("held", {}) else 0
     if name == "mute":
-        return _geti(_analyze(t), "Mute", 0)
+        return _is_muted(t)
     if name == "freerun":
         return _geti(t, "Freerunall", 0)
     return 0
+
+
+def _is_muted(t):
+    """Audio reactivity off: the show's Reactive toggle is down, or the
+    Reactor is muted."""
+    if _has(t, "Reactive") and not _geti(t, "Reactive", 1):
+        return 1
+    return _geti(_analyze(t), "Mute", 0)
 
 
 def _base_frame(apc, t, st):
@@ -759,7 +771,7 @@ def _reactive(t, frame, st):
     a = _analyze(t)
     beat = _chan(a, "beat")
     level = _chan(a, "level")
-    muted = _geti(a, "Mute", 0)
+    muted = _is_muted(t)
     phase = _chan(_tempo(t), "beat")
     out = dict(frame)
 

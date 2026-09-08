@@ -27,14 +27,16 @@ def load_controller():
     return ns
 
 
-# LED colour of each quadrant, as ink (light) and as a faint fill (paper).
+# Dark mode, like the show itself: the pads are the LED colour each quadrant
+# glows, on near-black; ink is the LED colour, fills are that colour dimmed.
+BG, TEXT, MUTED = "#121216", "#ecebe6", "#8f8d86"
 INK = {
-    "action": "#6b6b6b", "fx": "#7a4fa8", "scene": "#b3541e",
-    "palette": "#a8681c", "tool": "#1e7f8c", "round": "#5a5a5a", "empty": "#c9c9c9",
+    "action": "#c9c9c9", "fx": "#b48ee0", "scene": "#e08a58",
+    "palette": "#d9a450", "tool": "#5cc2cf", "round": "#9a9a9a", "empty": "#2a2a30",
 }
 FILL = {
-    "action": "#f3f3f3", "fx": "#efe7f8", "scene": "#fbeee3",
-    "palette": "#fbf1e0", "tool": "#e3f3f5", "round": "#ffffff", "empty": "#fafafa",
+    "action": "#26262b", "fx": "#241d33", "scene": "#2d1f17",
+    "palette": "#2a2416", "tool": "#14282c", "round": "#1a1a1f", "empty": "#17171b",
 }
 PAL_HEX = {
     "inferno": "#f0842a", "magma": "#c9273f", "plasma": "#d64fa3", "cyber": "#1fb3c9",
@@ -50,7 +52,7 @@ def _esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _text(x, y, s, size=10.5, weight=500, fill="#222", anchor="middle", extra=""):
+def _text(x, y, s, size=10.5, weight=500, fill=TEXT, anchor="middle", extra=""):
     return ('<text x="%.1f" y="%.1f" font-size="%.1f" font-weight="%d" fill="%s" '
             'text-anchor="%s" font-family="%s" %s>%s</text>'
             % (x, y, size, weight, fill, anchor, FONT, extra, _esc(s)))
@@ -62,7 +64,7 @@ def _pad_svg(x, y, kind, top, bottom=None, dot=None):
     if dot:
         out.append('<circle cx="%.1f" cy="%.1f" r="4" fill="%s"/>' % (x + PAD - 11, y + 11, dot))
     cy = y + PAD / 2 + (4 if bottom is None else -2)
-    out.append(_text(x + PAD / 2, cy, top, 11 if len(top) <= 9 else 9.5, 600, "#1d1d1d"))
+    out.append(_text(x + PAD / 2, cy, top, 11 if len(top) <= 9 else 9.5, 600, TEXT))
     if bottom:
         out.append(_text(x + PAD / 2, cy + 14, bottom, 8.5, 400, INK[kind]))
     return "\n".join(out)
@@ -71,7 +73,7 @@ def _pad_svg(x, y, kind, top, bottom=None, dot=None):
 def _round_svg(cx, cy, label, sub=None, blink=False):
     out = ['<circle cx="%.1f" cy="%.1f" r="14" fill="%s" stroke="%s" stroke-width="1"%s/>'
            % (cx, cy, FILL["round"], INK["round"], ' stroke-dasharray="3 2"' if blink else "")]
-    out.append(_text(cx, cy + 32, label, 8.5, 600, "#1d1d1d"))
+    out.append(_text(cx, cy + 32, label, 8.5, 600, TEXT))
     if sub:
         out.append(_text(cx, cy + 43, sub, 7.5, 400, INK["round"]))
     return "\n".join(out)
@@ -93,12 +95,12 @@ def render_svg(ns):
 
     parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
              % (width, height, width, height),
-             '<rect width="100%%" height="100%%" fill="#ffffff"/>']
+             '<rect width="100%%" height="100%%" fill="%s"/>' % BG]
 
     # Title line.
-    parts.append(_text(ORIGIN_X, 30, "APC mini mk2  ·  PhysicsVJ control map", 15, 600, "#111", "start"))
+    parts.append(_text(ORIGIN_X, 30, "APC mini mk2  ·  PhysicsVJ control map", 15, 600, TEXT, "start"))
     parts.append(_text(ORIGIN_X, 46, "grid note = row × 8 + col, row 0 at the bottom · factory mode, MIDI channel 1",
-                       9.5, 400, "#666", "start"))
+                       9.5, 400, MUTED, "start"))
 
     # The 8x8 grid.
     for note in range(64):
@@ -152,21 +154,21 @@ def render_svg(ns):
     fx0 = ORIGIN_X + PAD / 2
     for k in range(9):
         cx = fx0 + k * (PAD + GAP)
-        parts.append('<rect x="%.1f" y="%d" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>' % (cx - 4, fader_y))
-        parts.append('<rect x="%.1f" y="%d" width="22" height="9" rx="2" fill="#333"/>' % (cx - 11, fader_y + 26 + (k % 3) * 9))
+        parts.append('<rect x="%.1f" y="%d" width="8" height="70" rx="3" fill="#1e1e23" stroke="#6a6a70"/>' % (cx - 4, fader_y))
+        parts.append('<rect x="%.1f" y="%d" width="22" height="9" rx="2" fill="#d0d0d0"/>' % (cx - 11, fader_y + 26 + (k % 3) * 9))
         if k < 3:
             lab = ["TRAIL", "ORBIT", "POINT SIZE"][k]
         elif k < 8:
             lab = "scene dial %d" % (k + 1)
         else:
             lab = "CROSSFADE A/B"
-        parts.append(_text(cx, fader_y + 88, lab, 8.5, 600 if k in (0, 1, 2, 8) else 400, "#1d1d1d"))
+        parts.append(_text(cx, fader_y + 88, lab, 8.5, 600 if k in (0, 1, 2, 8) else 400, TEXT))
     parts.append(_text(fx0, fader_y + 104, "faders 1–3: trail / orbit / point size where the scene has them; 4–8: the live scene's physics (FADER_MAP in apc_mini.py)",
-                       8.5, 400, "#666", "start"))
+                       8.5, 400, MUTED, "start"))
     parts.append(_text(fx0, fader_y + 118, "LEDs: the live scene pad breathes with the level and jumps on kicks · PULSE flashes on detected kicks · TAP ticks with the tempo · FX pads breathe when on",
-                       8.5, 400, "#666", "start"))
+                       8.5, 400, MUTED, "start"))
     parts.append(_text(fx0, fader_y + 132, "Press animations: punch ripples, big punch flashes, re-fire / reset wipe, title curtains down, palette sparkles, scene cuts ripple in the new palette colour",
-                       8.5, 400, "#666", "start"))
+                       8.5, 400, MUTED, "start"))
     parts.append("</svg>")
     return "\n".join(parts)
 

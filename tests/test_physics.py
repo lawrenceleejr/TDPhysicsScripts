@@ -323,7 +323,10 @@ def test_geometry_and_colour_arrays_line_up():
     c = show.colours()
     assert c.shape == (show.n_points, 4)
     assert c.dtype == np.float32
-    assert show.n_line_points == sum(len(p) for p in show.field.polys)
+    # Line points are the field's own polylines plus the extra pieces dashing
+    # the scalar lines adds; every one of them is owned by a line (owner >= 0).
+    assert show.n_line_points >= sum(len(p) for p in show.field.polys)
+    assert show.n_line_points == int((show._owner >= 0).sum())
 
 
 def test_marks_toggle_changes_only_the_marks():
@@ -470,3 +473,27 @@ def test_flow_punch_blasts_outward_then_fades():
         flow.step(1 / 60)
     assert flow._burst == 0.0
     assert np.abs(flow.pos).max() <= 5.0 + 1e-6  # still wrapped in the box
+
+
+def test_scalar_lines_are_drawn_dashed():
+    """A Higgs (scalar) propagator is dashed, per the Feynman convention:
+    several two-point polylines along the same segment, ink at both ends, and
+    their 'along' spans still let the flood light the line progressively."""
+    from physics.feynman import dash_spans, SCALAR
+    for L in (3.0, 8.0, 20.0, 47.0):
+        spans = dash_spans(L)
+        assert len(spans) >= 3 and len(spans) % 2 == 1
+        assert spans[0][0] == 0.0 and abs(spans[-1][1] - 1.0) < 1e-9
+        for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
+            assert a1 < b0                       # a real gap between dashes
+    show = FeynmanShow(os.path.join(_FIELDS, "16x9.json"), marks=False, seed=3)
+    f = show.field
+    scalars = [i for i in range(f.n_edges) if int(f.etype[i]) == SCALAR and len(f.polys[i]) == 2]
+    if scalars:
+        owner = show._owner
+        for i in scalars[:3]:
+            n_pieces = int((owner == i).sum()) // 2
+            assert n_pieces >= 3
+    # the polyline list and the colour buffer still agree point for point
+    assert sum(len(p) for p in show.polys) == show.n_points == len(show.colours())
+

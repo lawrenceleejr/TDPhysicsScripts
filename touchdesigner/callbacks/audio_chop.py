@@ -110,6 +110,9 @@ def onSetupParameters(scriptOp):
     s.val = 1.6
     scriptOp.par.Beatsens.normMin, scriptOp.par.Beatsens.normMax = 1.05, 3.0
     page.appendFloat("Beathold", label="Beat Hold (s)")[0].val = 0.22
+    d = page.appendFloat("Depth", label="Reactive Depth")[0]
+    d.val = 0.6
+    scriptOp.par.Depth.normMin, scriptOp.par.Depth.normMax = 0.0, 1.0
     page.appendToggle("Auto", label="Auto Levels")[0].val = True
     page.appendToggle("Mute", label="Mute (stop reacting)")[0].val = False
     page.appendPulse("Resetlevels", label="Reset Levels")
@@ -156,7 +159,7 @@ def onCook(scriptOp):
         analyzer = AudioAnalyzer(sample_rate=sr)
         st["analyzer"] = analyzer
         st["agc"] = AutoLevel(_BANDS + ["low"])
-        st["kick"] = KickTracker()
+        st["kick"] = KickTracker(decay=0.3)
     analyzer.sr = sr
     analyzer.attack = float(_p(scriptOp, "Attack", 0.7))
     analyzer.release = float(_p(scriptOp, "Release", 0.12))
@@ -166,6 +169,7 @@ def onCook(scriptOp):
     kt.refractory = float(_p(scriptOp, "Beathold", 0.22))
     auto = bool(_p(scriptOp, "Auto", True))
     mute = bool(_p(scriptOp, "Mute", False))
+    depth = max(0.0, min(1.0, float(_p(scriptOp, "Depth", 0.6))))
 
     x = _samples(scriptOp)
     feats = analyzer.analyze(x)
@@ -186,13 +190,25 @@ def onCook(scriptOp):
         st["last_frame"] = frame
     bands = st.get("bands", {n: 0.0 for n in _BANDS})
 
+    # The beat flash is eased in over ~40 ms (a one-pole on the rising edge)
+    # so it swells rather than clicks; its fall is the tracker's own decay.
+    beat_s = st.get("beat_s", 0.0)
+    if kt.envelope > beat_s:
+        beat_s += (kt.envelope - beat_s) * (1.0 - np.exp(-dt / 0.04))
+    else:
+        beat_s = kt.envelope
+    st["beat_s"] = beat_s
+
+    # Depth scales how hard the show reacts (0 = still, 1 = full); the pulse
+    # stays centred on 0.5 so bound parameters breathe about their rest value.
     vals = {
-        "bass": bands["bass"], "mid": bands["mid"], "high": bands["high"],
-        "level": bands["level"], "beat": kt.envelope, "kick": kt.strength,
-        "pulse": kt.pulse(), "bpm": kt.bpm,
+        "bass": bands["bass"] * depth, "mid": bands["mid"] * depth,
+        "high": bands["high"] * depth, "level": bands["level"] * depth,
+        "beat": beat_s * depth, "kick": kt.strength * depth,
+        "pulse": 0.5 + (kt.pulse() - 0.5) * depth, "bpm": kt.bpm,
     }
-    if mute:
-        vals = {k: (kt.bpm if k == "bpm" else 0.0) for k in vals}
+    if mute or depth <= 0.0:
+        vals = {k: (kt.bpm if k == "bpm" else (0.5 if k == "pulse" else 0.0)) for k in vals}
     _emit(scriptOp, vals)
 
 

@@ -9,6 +9,7 @@
 //   uFxB   = (mirror, mono, solarize, fisheye)
 //   uFxC   = (tiles, shake, ascii, blur)
 //   uFxD   = (kaleidofx, rgbboost, strobe, negflash)
+//   uTone  = (exposure, black crush, vignette strength, dark mode 0/1)
 
 out vec4 fragColor;
 
@@ -19,6 +20,7 @@ uniform vec4 uFxA;
 uniform vec4 uFxB;
 uniform vec4 uFxC;
 uniform vec4 uFxD;
+uniform vec4 uTone;
 
 #define uLevel    (uAudio.x)
 #define uBeat     (uAudio.y)
@@ -58,8 +60,8 @@ void main() {
     float aspect = uRes.x / uRes.y;
 
     // ---- uv-domain effects ------------------------------------------------
-    // Beat punch: a quick zoom-in that relaxes between beats.
-    float zoom = 1.0 - uBeat * 0.06 * uPunch;
+    // Beat punch: a quick zoom-in that relaxes between beats (gentle).
+    float zoom = 1.0 - uBeat * 0.035 * uPunch;
     c *= zoom;
 
     // Shake: a per-frame jolt scaled by the beat.
@@ -154,12 +156,20 @@ void main() {
     float scan = 0.96 + 0.04 * sin(uv.y * uRes.y * 1.2 + uTime * 8.0 + uBar * TAU);
     col *= scan;
 
-    // Vignette + a touch of overall lift on loud passages.
-    float vig = smoothstep(1.1, 0.3, length(c));
-    col *= vig * (1.0 + uLevel * 0.25);
+    // Vignette + a touch of overall lift on loud passages. Dark mode pulls
+    // the vignette in tighter.
+    bool dark = uTone.w > 0.5;
+    float vig = dark ? smoothstep(0.95, 0.22, length(c)) : smoothstep(1.1, 0.3, length(c));
+    col *= mix(1.0, vig, uTone.z) * (1.0 + uLevel * 0.15);
 
-    // Expose (push harder on beats) then ACES filmic tonemap.
-    col = acesFilm(col * (1.15 + uBeat * 0.35));
+    // Expose (a little more on beats) then ACES filmic tonemap.
+    col = acesFilm(col * uTone.x * (1.1 + uBeat * 0.18));
+    if (dark) {
+        // Dark mode: crush the blacks so the ground is truly black and give the
+        // mids a slightly heavier gamma -- a screen that reads as dark-mode UI.
+        col = max(col - uTone.y, 0.0) / (1.0 - uTone.y);
+        col = pow(col, vec3(1.12));
+    }
     col = dither(col, gl_FragCoord.xy + uTime);
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));
