@@ -181,6 +181,23 @@ class HydrogenState:
     def nmax(self):
         return max(n for _, n, _, _ in self.terms)
 
+    @classmethod
+    def blend(cls, a, b, w):
+        """A coherent superposition of two states: ``a`` at weight 1-w, ``b``
+        at w. Amplitudes go as sqrt of the weights, so probability moves
+        linearly from one orbital to the other and every step of the way is a
+        real hydrogen state -- the cloud reshapes itself instead of cutting.
+        """
+        w = min(max(float(w), 0.0), 1.0)
+        ca, cb = sqrt(1.0 - w), sqrt(w)
+        merged = {}
+        for coef, scale in ((a.terms, ca), (b.terms, cb)):
+            for c, n, l, m in coef:
+                key = (int(n), int(l), int(m))
+                merged[key] = merged.get(key, 0j) + c * scale
+        terms = [(c, n, l, m) for (n, l, m), c in merged.items() if abs(c) > 1e-12]
+        return cls(terms or a.terms)
+
     def _eval(self, pos, t=0.0, grad=False):
         """psi at Cartesian ``pos`` (N, 3), and optionally grad psi in
         *spherical* components, with the local frame.

@@ -85,6 +85,54 @@ def _build(scriptOp, tracks, scale):
             vtx.point.Cd = (float(base[0] * b), float(base[1] * b), float(base[2] * b))
 
 
+def _scene(scriptOp):
+    """The scene COMP (the one carrying Orbit), walking up from this SOP."""
+    o = scriptOp
+    for _ in range(4):
+        o = o.parent()
+        if o is None:
+            return None
+        if hasattr(o.par, "Orbit"):
+            return o
+    return None
+
+
+def _publish(scriptOp, tracks, scale, gen):
+    """Hand the readout the tracks worth labelling: the highest-momentum ones,
+    each with a point on its own body to anchor a leader to.
+
+    Storage on the scene COMP, not on this SOP: an op writing its own storage
+    while it cooks is a cook dependency on itself.
+    """
+    scene = _scene(scriptOp)
+    if scene is None:
+        return
+    try:
+        from physics.hud import track_labels
+    except Exception:
+        return
+    ranked = sorted(tracks, key=lambda t: -float(getattr(t, "pt", 0.0)))[:8]
+    labels = track_labels(ranked)
+    rows = []
+    for tr, label in zip(ranked, labels):
+        pts = tr.points
+        if len(pts) < 2:
+            continue
+        # 72% along what is drawn so far: on the track, clear of its tip.
+        k = max(1, int(len(pts) * 0.72) - 1)
+        rows.append({"anchor": (float(pts[k, 0] * scale), float(pts[k, 1] * scale),
+                                float(pts[k, 2] * scale)),
+                     "label": label,
+                     "pt": float(getattr(tr, "pt", 0.0))})
+    try:
+        scene.store("hud_tracks", rows)
+        scene.store("hud_header", "EVENT %04d  B %.1f T  %d TRACKS"
+                    % (getattr(gen, "event_index", 0) % 10000, float(getattr(gen, "B", 0.0)),
+                       len(tracks)))
+    except Exception:
+        pass
+
+
 def onCook(scriptOp):
     st = _state(scriptOp)
     B = float(_p(scriptOp, "Bfield", 3.8))
@@ -115,7 +163,9 @@ def onCook(scriptOp):
     if st.get("last_built") == quant:
         return
     st["last_built"] = quant
-    _build(scriptOp, gen.grow(frac), scale)
+    tracks = gen.grow(frac)
+    _build(scriptOp, tracks, scale)
+    _publish(scriptOp, tracks, scale, gen)
 
 
 setupParameters = onSetupParameters

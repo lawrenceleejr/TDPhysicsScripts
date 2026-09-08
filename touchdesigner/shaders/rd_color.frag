@@ -1,7 +1,7 @@
 // Colourise a reaction-diffusion state field into glowing neon.
 // GLSL TOP: input 0 = the RD state (R=U, G=V). Output = pretty RGBA.
 //
-// Uniforms: uTime, uLevel, uHigh, uBeat, uPalette (int), uRes.
+// Uniforms: uTime, uLevel, uHigh, uBeat, uPalette (int), uInvert, uRes.
 
 out vec4 fragColor;
 
@@ -11,11 +11,14 @@ uniform float uLevel;
 uniform float uHigh;
 uniform float uBeat;
 uniform float uPalette;
+uniform float uInvert;      // 1 = light the other side of the field
 
 void main() {
     vec2 uv = vUV.st;
     vec2 s = texture(sTD2DInputs[0], uv).rg;
-    float v = s.y;
+    // The chemistry's V field: inverted, the background becomes the lit body
+    // and the spots become the holes in it.
+    float v = (uInvert > 0.5) ? (1.0 - s.y) : s.y;
 
     // Edge detection on V emphasises the glowing reaction fronts.
     vec2 texel = 1.0 / uRes;
@@ -23,6 +26,7 @@ void main() {
              - texture(sTD2DInputs[0], uv - vec2(texel.x, 0.0)).g;
     float vy = texture(sTD2DInputs[0], uv + vec2(0.0, texel.y)).g
              - texture(sTD2DInputs[0], uv - vec2(0.0, texel.y)).g;
+    // The edge is the same wherever the field is steep, inverted or not.
     float edge = clamp(length(vec2(vx, vy)) * 6.0, 0.0, 1.0);
 
     float t = fract(v * 2.2 + uTime * 0.03);

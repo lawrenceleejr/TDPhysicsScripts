@@ -176,13 +176,46 @@ def render_svg(ns):
     return "\n".join(parts)
 
 
+def write_png(svg_path, png_path, scale=2):
+    """Rasterise the map with a headless Chromium, if one is installed.
+
+    TouchDesigner's Movie File In TOP does not read SVG, so the cheatsheet the
+    dashboard displays is this PNG. Regenerate both together after changing
+    the control map.
+    """
+    import glob
+    import subprocess
+    cands = (glob.glob("/opt/pw-browsers/chromium*/chrome-linux/chrome")
+             + ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"])
+    binary = next((c for c in cands if os.path.exists(c)), None)
+    if binary is None:
+        print("no headless Chromium found; PNG not written (the SVG is current)")
+        return False
+    # The SVG declares its own size; ask for a viewport that fits it exactly.
+    head = open(svg_path).read(400)
+    import re as _re
+    m = _re.search(r'viewBox="0 0 (\d+) (\d+)"', head)
+    w, h = (int(m.group(1)), int(m.group(2))) if m else (900, 1000)
+    subprocess.run([binary, "--headless", "--no-sandbox", "--disable-gpu",
+                    "--hide-scrollbars", "--force-device-scale-factor=%d" % scale,
+                    "--window-size=%d,%d" % (w, h),
+                    "--screenshot=%s" % png_path, "file://%s" % svg_path],
+                   check=True, capture_output=True)
+    print("wrote", png_path)
+    return True
+
+
 def main(argv):
-    out = argv[1] if len(argv) > 1 else os.path.join(ROOT, "docs", "apc_map.svg")
+    args = [a for a in argv[1:] if not a.startswith("-")]
+    out = args[0] if args else os.path.join(ROOT, "docs", "apc_map.svg")
     svg = render_svg(load_controller())
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w") as fh:
         fh.write(svg)
     print("wrote", out)
+    if "--no-png" not in argv:
+        write_png(out, os.path.splitext(out)[0] + ".png")
 
 
 if __name__ == "__main__":

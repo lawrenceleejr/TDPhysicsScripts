@@ -251,6 +251,30 @@ The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
 palette→colour map) are constants at the top of `apc_mini.py` — re-map the
 surface by editing those, not the wiring.
 
+## The dashboard and the LHC readout
+
+`build_dashboard` builds the operator's view at the top level. The program
+panel is a **Select TOP** on `PhysicsVJ/out` — the same TOP the Window COMP
+renders — so the preview cannot disagree with what the audience sees, and the
+show is rendered once. Transform TOPs scale each panel into its column from
+one `Split` parameter, a Composite stacks them, and a Switch drops the whole
+layout for the plain feed when `Show APC Map` is off. The cheatsheet is a
+Movie File In TOP on `docs/apc_map.png`, which `tools/apc_map.py` rasterises
+beside the SVG (TouchDesigner's Movie File In does not read SVG), so the
+picture still cannot drift from the controller's tables.
+
+The LHC readout is geometry, not a texture. `physics/vecfont.py` is a stroke
+font — every glyph a few polylines over the unit box — and `physics/hud.py`
+lays out, per labelled track, a tick on the track, a dog-leg leader (out at 45
+degrees, then level to a label column packed so no two labels collide) and the
+readout text. Both are plain numpy and unit-tested, because "does this leader
+point at its own track" is a property, not a matter of taste. The labels ride
+in a second Geometry COMP that `build_lhc` deliberately never orbits, and
+`lhc_hud_sop.py` rotates the anchors by the scene's own Orbit angle instead —
+labels upright, leaders pinned. `lhc_sop.py` publishes the tracks worth
+labelling into the scene COMP's storage (never its own, which would be a cook
+dependency on itself) and the readout only draws.
+
 ## The GLSL / audio / tempo / POP layer
 
 The same split as the physics scenes applies: testable numpy cores +

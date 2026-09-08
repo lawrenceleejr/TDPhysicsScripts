@@ -50,6 +50,7 @@ def onSetupParameters(scriptOp):
     menu.menuNames = palette.PALETTE_NAMES
     menu.menuLabels = palette.PALETTE_NAMES
     menu.val = "inferno"
+    page.appendToggle("Invert", label="Invert Domains")[0].val = True
     page.appendPulse("Reset", label="Reset")
 
 
@@ -82,6 +83,8 @@ def onCook(scriptOp):
     # over the whole lattice; the image is filled one channel at a time with
     # broadcast scalars, which is the cheapest way numpy writes an (H, W, 3).
     lo, hi = palette.colorize(np.array([0.0, 1.0], dtype=np.float32), pal)
+    if bool(_p(scriptOp, "Invert", True)):
+        lo, hi = hi, lo               # the other domain is the lit one
     up = (sim.spins > 0).astype(np.float32)               # 1 where spin is +1
     rgb = np.empty(sim.spins.shape + (3,), dtype=np.float32)
     walls = sim.domain_walls() * wall_glow if wall_glow > 0.0 else None

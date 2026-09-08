@@ -149,26 +149,44 @@ td_build.build_particles(op('/'), mode='softbody')
 Every scene exposes a custom parameter page. Highlights:
 
 **Ising** — `Temperature` (try 2.0–2.4 for the best domains; 2.269 is critical),
-`Lattice Size`, `Sweeps/Frame`, `Domain Wall Glow`, `Palette`, `Reset`.
+`Lattice Size`, `Sweeps/Frame`, `Domain Wall Glow`, `Invert Domains` (on by
+default: which spin direction is the lit one), `Palette`, `Reset`.
 
 **N-Body** — `Initial Condition` (Colliding galaxies / Rotating disk / Star
 cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
-`Point Size`, `Palette`, `Reset / New System`.
+`Point Size`, `Palette`, `Reset / New System`. Lit by **one soft-edged
+spotlight and nothing else** — no ambient, no fill, no environment — so a body
+is only visible while it is inside the beam, and the beam sweeps slowly so
+bodies drift through it on their own.
 
 **Flow / Soft Body / Storm** (same callback, `Mode` switch) — `Particles`,
 `Flow Speed`, `Noise Scale`, `Evolve Rate`, `Soft Body Spin`, `Point Size`,
-`Palette`, `Punch Strength`, `Punch`, `Reset`. **Punch** is the hit: a shock
-wave rolling through the soft body, an outward blast through the flow and the
-storm. It fires from the sim's pulse, the APC's re-fire button, a **left
+`Palette`, `Punch Strength` (1.8 by default, up to 4), `Punch`, `Reset`.
+**Punch** is the hit: a shock wave rolling through the soft body, an outward
+blast through the flow and the storm. On the soft body it is heavy — the
+wavefront displaces by more than a radius and decays slowly, so it visibly
+barrels through and the body wobbles back into shape after it. It fires from the sim's pulse, the APC's re-fire button, a **left
 click anywhere** or the **space bar** (toggle `Click / Space = Punch` on
 `PhysicsVJ`), or `PhysicsVJ`'s own `Punch` pulse.
+
+**Reaction-Diffusion** — `Feed Rate`, `Kill Rate`, `Invert Field` (on by
+default: the background becomes the lit body and the spots the holes in it),
+`Palette`, `Reseed`.
 
 **Raymarch SDF** — `Form` (metaballs / gyroid lattice / IFS fractal / torus
 knot; `Next Form` steps through them), `Speed`, `Twist`, `Zoom`, `Detail`,
 `Morph`, `Palette`.
 
 **LHC Tracks** — `B Field (T)`, `Seconds/Event`, `Grow Time`, `World Scale`,
-`Palette`, `New Collision`.
+`Palette`, `New Collision`. It carries a **detector readout**: the
+highest-momentum tracks get a tick, a dog-leg leader out to a packed label
+column, and a line of numbers (`TRK01 PT  42.5 GEV Q+`) under an event header.
+The labels are drawn as *lines* in a stroke font (`physics/vecfont.py`), so
+they render through the same camera and bloom as the tracks and stay crisp at
+any zoom; they live in their own un-orbited geometry, so they stay upright
+while the event turns and each leader stays pinned to its track. On the
+readout's page: `Labelled Tracks`, `Label Column`, `Readout Size`, `Show
+Readout`.
 
 **Feynman** — scalar (Higgs) lines are drawn **dashed**, per convention;
 fermions solid, bosons wavy. Two pages, because the geometry and the animation
@@ -189,6 +207,14 @@ built-in **invariant-mass HUD**: a translucent log-scale histogram of the whole
 dataset (J/ψ, Υ and Z marked, left→right) with a live marker on the event being
 drawn. `HUD Opacity` fades it in/out; `Mass Min/Max` (on the HUD's own page)
 zoom the axis.
+
+**Bohmian H** — `Orbital / Superposition`, `Flow Speed` (1.1 by default — the
+guidance flow is slow and legible now), `Orbital Morph (s)` (8 s: choosing a
+new orbital does not cut, the cloud is handed a coherent superposition of
+where it was and where it is going and the weight crosses over, so it
+reshapes itself through real hydrogen states), `Depth Cue` (brightness and
+point size follow depth, which is what gives the additive cloud its volume),
+`Respawn / sec`, `Substeps/Frame`, `Palette`.
 
 **Motion trails** — every geometry scene (N-Body, Flow, Soft Body, LHC, Open
 Data) has a `Trail (feedback)` control (0–0.99): a feedback loop that leaves
@@ -301,6 +327,24 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
 > `docs/ARCHITECTURE.md` for the handful of version-sensitive spots to glance at
 > on first load (GLSL-TOP uniform slots, POP operator/parameter names, MIDI
 > realtime-clock delivery).
+
+---
+
+## The operator's view
+
+`build_all` also drops a **`Dashboard`** COMP at the top level. View its `out`
+on your laptop and you get the show as it goes out beside the control map:
+
+- **Left two thirds** — the **program feed**: a Select TOP on the very same
+  `PhysicsVJ/out` the second display is sent, so what you are watching is the
+  program and not a second render of it.
+- **Right column** — the **APC cheatsheet** (`docs/apc_map.png`), so a pad you
+  have forgotten is a glance away.
+- `Program / Map Split` moves the divider; `Show APC Map` off gives the plain
+  program feed full frame.
+
+Beside it is a **`program_window`** Window COMP pointed at the same TOP, set to
+**monitor 2**; the dashboard's `Open Program Window` pulse opens it.
 
 ---
 

@@ -159,6 +159,11 @@ def onCook(scriptOp):
 
     if _FLIP_Y:
         img = np.flipud(img)
+    # Alpha was never written, so every pixel of this overlay came out fully
+    # transparent -- which leaves an 'over' composite undefined. The ink is
+    # opaque in proportion to how bright it is; the paper stays clear, so the
+    # live scene shows through everywhere the HUD does not draw.
+    img[..., 3] = np.clip(img[..., :3].max(axis=2) * 1.6, 0.0, 1.0)
     scriptOp.copyNumpyArray(np.ascontiguousarray(img, dtype=np.float32))
 
 

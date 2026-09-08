@@ -59,8 +59,8 @@ def onSetupParameters(scriptOp):
     # A hit: a shock wave through the soft body, a blast outward for the flow.
     # Pulsed by the APC re-fire button, a click on the screen or the space bar
     # (td_build wires those), or from here.
-    page.appendFloat("Punchstrength", label="Punch Strength")[0].val = 1.0
-    scriptOp.par.Punchstrength.normMin, scriptOp.par.Punchstrength.normMax = 0.2, 3.0
+    page.appendFloat("Punchstrength", label="Punch Strength")[0].val = 1.8
+    scriptOp.par.Punchstrength.normMin, scriptOp.par.Punchstrength.normMax = 0.2, 4.0
     page.appendPulse("Punch", label="Punch (perturb)")
     page.appendPulse("Reset", label="Reset")
 
