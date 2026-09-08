@@ -139,7 +139,14 @@ class CurlNoiseFlow:
         self.t = 0.0
         self.field = self._build_field()
         self._field_flat = self.field.reshape(-1, 3)
+        self._burst = 0.0        # outward blast speed, see punch()
         self.last_frame = -1
+
+    def punch(self, strength: float = 1.0) -> None:
+        """A blast from the centre: every particle is flung outward, fast at
+        first and dying away over a second or so, then the curl flow takes
+        over again. Repeated punches stack."""
+        self._burst += float(strength) * self.bounds * 2.5
 
     @property
     def positions(self) -> np.ndarray:
@@ -202,6 +209,12 @@ class CurlNoiseFlow:
             self._field_flat = self.field.reshape(-1, 3)
         self._steps += 1
         self.vel = self.velocity_at(self.pos) * self.speed
+        if self._burst > 0.0:
+            r = np.linalg.norm(self.pos, axis=1, keepdims=True) + 1e-3
+            self.vel = self.vel + (self.pos / r) * np.float32(self._burst)
+            self._burst *= max(0.0, 1.0 - 2.5 * dt)          # ~0.4 s half-life
+            if self._burst < 0.02 * self.bounds:             # spent: stop cleanly
+                self._burst = 0.0
         self.pos = self.pos + self.vel * dt
         # Wrap through the box so the population stays put and recirculates.
         b = self.bounds
@@ -240,12 +253,14 @@ class ShapeMatchedSoftBody:
     ):
         self._rng = np.random.default_rng(seed)
         self.n = int(n)
+        self.radius = float(radius)
         self.stiffness = float(stiffness)
         self.damping = float(damping)
         self.spin = float(spin)
         self.axis = np.asarray(axis, dtype=np.float64)
         self.wobble = float(wobble)
         self._noise = NoiseField(seed)
+        self._waves: list[dict] = []     # perturbations in flight, see punch()
 
         # Rest shape: points filling a sphere (radius weighted for uniformity).
         u = self._rng.uniform(0.0, 1.0, self.n)
@@ -274,6 +289,45 @@ class ShapeMatchedSoftBody:
 
     def speeds(self) -> np.ndarray:
         return np.sqrt((self.vel * self.vel).sum(axis=1)).astype(np.float32)
+
+    def punch(self, strength: float = 1.0, direction=None) -> None:
+        """Send a perturbation barrelling through the body.
+
+        A planar bulge starts outside the body and travels across it along
+        ``direction`` (random if not given): particles the wavefront passes
+        are pushed along the direction of travel and outward, shape matching
+        pulls them back once it has gone by, so it reads as a shock rolling
+        through jelly. ``strength`` 1 is a heavy hit (peak displacement about
+        half the radius); several in flight stack.
+        """
+        if direction is None:
+            d = self._rng.normal(size=3)
+        else:
+            d = np.asarray(direction, dtype=np.float64)
+        d = d / (np.linalg.norm(d) + 1e-12)
+        R = self.radius
+        self._waves.append({
+            "dir": d, "pos": -1.7 * R, "amp": 0.5 * R * float(strength),
+            "width": 0.45 * R, "speed": 2.4 * R,
+        })
+
+    def _apply_waves(self, new: np.ndarray, p: np.ndarray, dt: float) -> np.ndarray:
+        """Displace ``new`` by every wave in flight and advance the waves."""
+        if not self._waves:
+            return new
+        norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
+        radial = p / norm
+        for w in self._waves:
+            along = p @ w["dir"]
+            g = np.exp(-0.5 * ((along - w["pos"]) / w["width"]) ** 2)
+            push = w["dir"][None, :] * 0.7 + radial * 0.6
+            new = new + (w["amp"] * g)[:, None] * push
+            w["pos"] += w["speed"] * dt
+            w["amp"] *= max(0.0, 1.0 - 0.35 * dt)
+        R = self.radius
+        self._waves = [w for w in self._waves
+                       if w["pos"] < 2.2 * R and w["amp"] > 0.01 * R]
+        return new
 
     def _best_fit_rotation(self, p: np.ndarray) -> np.ndarray:
         # Cross-covariance between current (centered) and rest positions.
@@ -327,6 +381,7 @@ class ShapeMatchedSoftBody:
             jitter = self._noise.noise(self.pos * 0.5 + (self.t % 256.0) * 0.3)
             norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
             new = new + (self.wobble * dt) * jitter[:, None] * (p / norm)
+        new = self._apply_waves(new, p, dt)
         # Derived velocity (for speeds()/colour), with damping.
         self.vel = (1.0 - self.damping) * (new - prev) / dt
         self.pos = new

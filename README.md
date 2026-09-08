@@ -11,15 +11,15 @@ Eleven scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU
 | # | Scene | What it is |
 |---|-------|-----------|
 | 0 | **Ising** | A 2D Ising model evolving near its critical temperature — breathing magnetic domains with glowing domain walls. |
-| 1 | **N-Body** | Gravitational N-body: colliding galaxies, a rotating disk, or a star cluster. Glowing points coloured by speed. |
-| 2 | **Flow** | Divergence-free **curl-noise** turbulence — tens of thousands of particles swirling like smoke. |
-| 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly. |
+| 1 | **N-Body** | Gravitational N-body: colliding galaxies, a rotating disk, or a star cluster. Smooth Phong-lit spheres under a three-point rig with a soft shadow, coloured by speed. |
+| 2 | **Flow** | Divergence-free **curl-noise** turbulence — tens of thousands of lit particles swirling like smoke. **Punch** it for an outward blast. |
+| 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly. **Punch** it and a shock wave barrels through. |
 | 4 | **LHC Tracks** | Synthetic collider events: charged tracks spiralling in a magnetic field, colour-coded by momentum, re-firing every few seconds. |
 | 5 | **Open Data** | **Real CMS dimuon open data** — each event drawn as two muon tracks, coloured by invariant mass (you're literally rendering the J/ψ, Υ and Z). |
 | 6 | **React-Diff** | GPU **Gray-Scott reaction-diffusion** (feedback GLSL TOP) — organic spots/stripes/mitosis that bloom and dissolve with the music. |
-| 7 | **Raymarch SDF** | A compiled-shader **raymarched signed-distance field** — morphing metaballs that twist to the bass and orbit on the bar. |
-| 8 | **POP Storm** | A **GPU particle storm** built with TouchDesigner's POP family (falls back to high-count curl-noise on older builds): huge numbers of particles driven by radial + turbulent forces, rim-lit by a compiled glow material. |
-| 9 | **Bohmian H** | **Pilot-wave (de Broglie–Bohm) electrons in hydrogen orbitals.** A cloud sampled from \|ψ\|² flows along the guidance velocity **v = Im(∇ψ/ψ)** — electrons in m≠0 orbitals circulate the z-axis into glowing rings, real/m=0 orbitals sit nearly still, and superpositions slosh. Pick the orbital/superposition on the sim. |
+| 7 | **Raymarch SDF** | A compiled-shader **raymarched signed-distance field** with four forms — metaballs, a gyroid lattice, a kaleidoscopic fractal, a torus knot — and `Speed`, `Twist`, `Zoom`, `Detail`, `Morph` dials; soft shadows and ambient occlusion, twisting to the bass. |
+| 8 | **Storm** | A dense **particle storm**: 40 000 curl-noise particles rendered as an additive cloud with long trails. (TouchDesigner's POP family is wired as an opt-in path.) **Punch** for a blast. |
+| 9 | **Bohmian H** | **Pilot-wave (de Broglie–Bohm) electrons in hydrogen orbitals.** A cloud sampled from \|ψ\|² flows along the guidance velocity **v = Im(∇ψ/ψ)** — rendered as tens of thousands of tiny additive points under wide bloom and long trails, so m≠0 orbitals draw glowing rings, real/m=0 orbitals sit nearly still, and superpositions slosh. Pick the orbital/superposition on the sim. |
 | 10 | **Feynman** | A field of Feynman diagram lines — fermions, bosons and Higgs, every vertex a legal Standard Model interaction — with a front travelling through it, drawing each line out of the vertex it reaches and letting the wake fade. |
 
 Scenes 6–9 are GPU/shader-based; the whole show is **audio-reactive and
@@ -155,8 +155,17 @@ Every scene exposes a custom parameter page. Highlights:
 cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 `Point Size`, `Palette`, `Reset / New System`.
 
-**Flow / Soft Body** (same callback, `Mode` switch) — `Particles`, `Flow Speed`,
-`Noise Scale`, `Evolve Rate`, `Soft Body Spin`, `Point Size`, `Palette`, `Reset`.
+**Flow / Soft Body / Storm** (same callback, `Mode` switch) — `Particles`,
+`Flow Speed`, `Noise Scale`, `Evolve Rate`, `Soft Body Spin`, `Point Size`,
+`Palette`, `Punch Strength`, `Punch`, `Reset`. **Punch** is the hit: a shock
+wave rolling through the soft body, an outward blast through the flow and the
+storm. It fires from the sim's pulse, the APC's re-fire button, a **left
+click anywhere** or the **space bar** (toggle `Click / Space = Punch` on
+`PhysicsVJ`), or `PhysicsVJ`'s own `Punch` pulse.
+
+**Raymarch SDF** — `Form` (metaballs / gyroid lattice / IFS fractal / torus
+knot; `Next Form` steps through them), `Speed`, `Twist`, `Zoom`, `Detail`,
+`Morph`, `Palette`.
 
 **LHC Tracks** — `B Field (T)`, `Seconds/Event`, `Grow Time`, `World Scale`,
 `Palette`, `New Collision`.
@@ -165,12 +174,16 @@ cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 operators. On `geo/lines`: `Field` (six shipped fields — three 16:9, plus 21:9,
 9:16 and square), `World Width`, `Vertex Marks`, `Rebuild`. On `state`:
 `Line Lifetime` (the dial that matters — how long a line stays lit, as a share
-of one traverse; 0.3 keeps the pattern turning over, 1.0 fills the frame and
-holds it), `Seconds / Traverse`, `Fade Share`, `Fronts`, `Palette`, `Hold Lit`
-(light everything and freeze, for a still), `New Fronts`.
+of one traverse; 0.4 keeps the pattern turning over, 1.0 fills the frame and
+holds it), `Seconds / Traverse` (45 by default: slow), `Growth (line lengths)`
+(the creep — how far the front travels while a line draws itself; 6 lets each
+line be watched growing, 2 pops them out), `Fade Share`, `Fronts`, `Palette`,
+`Hold Lit` (light everything and freeze, for a still), `New Fronts`.
 
 **Open Data** — `Seconds/Event`, `Grow Time`, `World Scale`, `Event Order`
-(by mass / random / sequential), `Palette`, `Next Event`. It also gets a
+(by mass / random / sequential), `Events Kept` (earlier events stay on screen,
+dimming with age, so the frame reads as an event display), `Palette`, `Next
+Event`. It also gets a
 built-in **invariant-mass HUD**: a translucent log-scale histogram of the whole
 dataset (J/ψ, Υ and Z marked, left→right) with a live marker on the event being
 drawn. `HUD Opacity` fades it in/out; `Mass Min/Max` (on the HUD's own page)
@@ -268,7 +281,7 @@ parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`
 | **Track button 7** | **Cut** — commit the crossfade B→A (lit while a fade is in progress). |
 | **Track button 8** | **Freerun All** toggle (lit while on). |
 | **Scene button 1** (top-right) | **Reset** the controller — re-handshake and repaint every LED. |
-| **Scene button 2** | **Re-fire** the live scene (new collision / next event / reseed). |
+| **Scene button 2** | **Re-fire** the live scene: new collision / next event / reseed — and a **Punch** through the soft body, flow and storm. |
 | **Scene buttons 3–5** | Launch the scenes past the 8-wide grid (**POP Storm** = 8, **Bohmian H** = 9, **Feynman** = 10). |
 | **Master fader (9)** | **Crossfade** A/B. |
 | **Faders 1 / 2 / 3** | Live scene **Trail / Orbit / Point Size**. Faders 4–8 are free. |

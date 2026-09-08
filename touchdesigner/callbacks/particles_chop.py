@@ -56,12 +56,21 @@ def onSetupParameters(scriptOp):
     menu.menuNames = palette.PALETTE_NAMES
     menu.menuLabels = palette.PALETTE_NAMES
     menu.val = "cyber"
+    # A hit: a shock wave through the soft body, a blast outward for the flow.
+    # Pulsed by the APC re-fire button, a click on the screen or the space bar
+    # (td_build wires those), or from here.
+    page.appendFloat("Punchstrength", label="Punch Strength")[0].val = 1.0
+    scriptOp.par.Punchstrength.normMin, scriptOp.par.Punchstrength.normMax = 0.2, 3.0
+    page.appendPulse("Punch", label="Punch (perturb)")
     page.appendPulse("Reset", label="Reset")
 
 
 def onPulse(par):
+    st = _state(par.owner)
     if par.name == "Reset":
-        _state(par.owner).pop("sim", None)
+        st.pop("sim", None)
+    elif par.name == "Punch" and "sim" in st:
+        st["sim"].punch(float(_p(par.owner, "Punchstrength", 1.0)))
 
 
 def onCook(scriptOp):
