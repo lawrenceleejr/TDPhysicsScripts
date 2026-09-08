@@ -62,8 +62,24 @@ LEGAL_VERTICES = frozenset(
 
 
 SCALAR = 2                 # etype index of an 'h' (Higgs / scalar) line
+SEGMENT_LEN = 3.0          # field units per drawn point on a straight line
 DASH_FIELD_UNITS = 8.0     # target dash pitch, in the field's own units
 DASH_GAP = 0.6             # gap length as a share of a dash
+
+
+def subdivide(a, b, length_field_units: float):
+    """A straight segment as a chain of points, one every SEGMENT_LEN units.
+
+    A two-point line has nowhere for a growing front to be: it is either
+    absent or fully drawn (with a brightness ramp), which is why short legs
+    appeared to pop into existence while the bosons -- whose wave the exporter
+    bakes as many points -- crept in properly. Subdividing gives every line
+    the geometry to be drawn along.
+    """
+    n = max(2, int(round(length_field_units / SEGMENT_LEN)) + 1)
+    t = np.linspace(0.0, 1.0, n, dtype=np.float32)[:, None]
+    return (np.asarray(a, dtype=np.float32)[None, :] * (1.0 - t)
+            + np.asarray(b, dtype=np.float32)[None, :] * t)
 
 
 def dash_spans(length_field_units: float):
@@ -373,17 +389,26 @@ class FeynmanShow:
 
         for i in range(f.n_edges):
             pts = place(f.polys[i])
+            raw_len = float(f.elen[i])
+            if len(pts) == 2 and int(f.etype[i]) != SCALAR:
+                # A straight propagator: give it points to grow along.
+                pts = subdivide(pts[0], pts[1], raw_len)
+                polys.append(pts)
+                owner.append(np.full(len(pts), i, dtype=np.int32))
+                along.append(np.linspace(0.0, 1.0, len(pts), dtype=np.float32))
+                continue
             if int(f.etype[i]) == SCALAR and len(pts) == 2:
                 # A scalar propagator is drawn dashed (the Feynman convention
                 # for a Higgs line): several short polylines along the same
                 # segment, each carrying its own 'along' span so the flood
                 # still lights the line progressively from either end.
-                for a0, a1 in dash_spans(float(np.linalg.norm(pts[1] - pts[0])) / s):
-                    seg = np.stack([pts[0] + (pts[1] - pts[0]) * a0,
-                                    pts[0] + (pts[1] - pts[0]) * a1]).astype(np.float32)
+                for a0, a1 in dash_spans(raw_len):
+                    p0 = pts[0] + (pts[1] - pts[0]) * a0
+                    p1 = pts[0] + (pts[1] - pts[0]) * a1
+                    seg = subdivide(p0, p1, raw_len * (a1 - a0))
                     polys.append(seg)
-                    owner.append(np.full(2, i, dtype=np.int32))
-                    along.append(np.asarray([a0, a1], dtype=np.float32))
+                    owner.append(np.full(len(seg), i, dtype=np.int32))
+                    along.append(np.linspace(a0, a1, len(seg), dtype=np.float32))
                 continue
             polys.append(pts)
             owner.append(np.full(len(pts), i, dtype=np.int32))

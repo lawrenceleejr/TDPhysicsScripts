@@ -307,8 +307,8 @@ class ShapeMatchedSoftBody:
         d = d / (np.linalg.norm(d) + 1e-12)
         R = self.radius
         self._waves.append({
-            "dir": d, "pos": -1.7 * R, "amp": 0.5 * R * float(strength),
-            "width": 0.45 * R, "speed": 2.4 * R,
+            "dir": d, "pos": -1.8 * R, "amp": 1.15 * R * float(strength),
+            "width": 0.38 * R, "speed": 3.1 * R,
         })
 
     def _apply_waves(self, new: np.ndarray, p: np.ndarray, dt: float) -> np.ndarray:
@@ -320,10 +320,10 @@ class ShapeMatchedSoftBody:
         for w in self._waves:
             along = p @ w["dir"]
             g = np.exp(-0.5 * ((along - w["pos"]) / w["width"]) ** 2)
-            push = w["dir"][None, :] * 0.7 + radial * 0.6
+            push = w["dir"][None, :] * 1.0 + radial * 0.85
             new = new + (w["amp"] * g)[:, None] * push
             w["pos"] += w["speed"] * dt
-            w["amp"] *= max(0.0, 1.0 - 0.35 * dt)
+            w["amp"] *= max(0.0, 1.0 - 0.22 * dt)
         R = self.radius
         self._waves = [w for w in self._waves
                        if w["pos"] < 2.2 * R and w["amp"] > 0.01 * R]

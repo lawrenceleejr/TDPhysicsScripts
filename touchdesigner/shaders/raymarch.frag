@@ -5,7 +5,7 @@
 //
 // Uniforms (packed vec4s so they fit in a few Vectors slots; set by td_build):
 //   uAudio = (bass, mid, high, level)
-//   uTempo = (beat, bar, time, palette)
+//   uTempo = (beat, pulse, time, palette)   pulse = the smooth beat pulsation
 //   uCtrl  = (shape, speed, twist, zoom)      shape 0..3, see below
 //   uCtrl2 = (detail, morph, 0, 0)            detail 1..4, morph 0..1
 //
@@ -27,7 +27,7 @@ uniform vec4 uCtrl2;
 #define uHigh    (uAudio.z)
 #define uLevel   (uAudio.w)
 #define uBeat    (uTempo.x)
-#define uBar     (uTempo.y)
+#define uPulse   (uTempo.y)
 #define uTime    (uTempo.z)
 #define uPalette (uTempo.w)
 #define uShape   (uCtrl.x)
@@ -37,8 +37,10 @@ uniform vec4 uCtrl2;
 #define uDetail  (uCtrl2.x)
 #define uMorph   (uCtrl2.y)
 
-// The form's own clock: speed dial times real time, plus a nudge per bar so
-// it breathes with the tempo even at speed 0.
+// The form's own clock: strictly the speed dial times real time. Nothing that
+// wraps may enter it -- the bar phase used to, and a sawtooth that resets is
+// exactly the jerk you saw: the whole form and the camera snapped back once a
+// bar. The tempo reaches the geometry only through the smooth pulse.
 float T;
 int   gShape;
 int   gDetail;
@@ -49,7 +51,7 @@ float gR[8];
 float gK;
 
 void setupBlobs() {
-    float spread = (1.1 + uMorph * 0.9) + uBar * 0.4;
+    float spread = (1.1 + uMorph * 0.9) + uPulse * 0.15;
     int n = 3 + gDetail;
     for (int i = 0; i < 8; i++) {
         if (i >= n) break;
@@ -57,7 +59,7 @@ void setupBlobs() {
         gC[i] = vec3(sin(T * 0.5 + fi * 1.7),
                      cos(T * 0.43 + fi * 2.3),
                      sin(T * 0.37 + fi * 0.9)) * spread;
-        gR[i] = 0.42 + 0.22 * sin(T + fi) + uBeat * 0.2;
+        gR[i] = 0.42 + 0.22 * sin(T + fi) + uPulse * 0.08;
     }
     gK = 0.5 + uMid * 0.5 + uMorph * 0.4;
 }
@@ -82,7 +84,7 @@ float sdGyroid(vec3 p) {
     float k = 2.2 + uMorph * 2.5 + uBass * 0.6;
     vec3 q = p * k + vec3(0.0, T * 0.6, 0.0);
     float g = abs(dot(sin(q), cos(q.zxy))) / k - (0.06 + 0.05 * uMorph);
-    float shell = length(p) - (2.1 + uBeat * 0.25);
+    float shell = length(p) - (2.1 + uPulse * 0.12);
     return max(g, shell);
 }
 
@@ -113,7 +115,7 @@ float sdKnot(vec3 p) {
     float R = 1.5 + 0.3 * uMorph;
     float ang = atan(p.z, p.x);
     float lobes = float(3 + gDetail);
-    float ripple = 0.14 * sin(ang * lobes + T * 2.0) + 0.1 * uBeat;
+    float ripple = 0.14 * sin(ang * lobes + T * 2.0) + 0.05 * uPulse;
     vec2 c = vec2(length(p.xz) - R, p.y - 0.35 * sin(ang * (lobes - 1.0) - T * 1.3));
     return length(c) - (0.32 + ripple);
 }
@@ -163,16 +165,16 @@ float ao(vec3 p, vec3 n) {
 
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-    T = uTime * uSpeed + uBar * 0.6;
+    T = uTime * uSpeed;
     gShape = int(clamp(uShape + 0.5, 0.0, 3.0));
     gDetail = int(clamp(uDetail + 0.5, 1.0, 4.0));
     setupBlobs();
 
     // Slowly orbiting camera; Zoom moves it in and out. Up-reference chosen
     // away from the view dir so cross() never collapses (NaN frame).
-    float a = T * 0.15 + uBar * TAU * 0.1;
+    float a = T * 0.15;                              // one continuous orbit
     float dist = 4.2 / max(uZoom, 0.2);
-    vec3 ro = vec3(sin(a) * dist, 0.6 + uMid * 0.8 + 0.4 * sin(T * 0.11), cos(a) * dist);
+    vec3 ro = vec3(sin(a) * dist, 0.6 + uMid * 0.35 + 0.4 * sin(T * 0.11), cos(a) * dist);
     vec3 fwd = safeNorm(-ro);
     vec3 upRef = abs(fwd.y) > 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
     vec3 rgt = safeNorm(cross(upRef, fwd));

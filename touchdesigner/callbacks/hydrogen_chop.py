@@ -44,15 +44,21 @@ def onSetupParameters(scriptOp):
     c.val = 20000
     scriptOp.par.Count.normMin, scriptOp.par.Count.normMax = 2000, 120000
     scriptOp.par.Count.clampMin = True
+    mt = page.appendFloat("Morphtime", label="Orbital Morph (s)")[0]
+    mt.val = 8.0
+    scriptOp.par.Morphtime.normMin, scriptOp.par.Morphtime.normMax = 0.0, 30.0
+    dp = page.appendFloat("Depthcue", label="Depth Cue (3D read)")[0]
+    dp.val = 0.75
+    scriptOp.par.Depthcue.normMin, scriptOp.par.Depthcue.normMax = 0.0, 1.0
     sp = page.appendFloat("Speed", label="Flow Speed (exaggerated)")[0]
-    sp.val = 4.0
+    sp.val = 1.1
     scriptOp.par.Speed.normMin, scriptOp.par.Speed.normMax = 0.0, 12.0
     sub = page.appendInt("Substeps", label="Substeps / Frame")[0]
     sub.val = 2
     scriptOp.par.Substeps.normMin, scriptOp.par.Substeps.normMax = 1, 6
     scriptOp.par.Substeps.clampMin = True
     rf = page.appendFloat("Refresh", label="Respawn / sec")[0]
-    rf.val = 0.6
+    rf.val = 0.22
     scriptOp.par.Refresh.normMin, scriptOp.par.Refresh.normMax = 0.0, 4.0
     page.appendFloat("Pointsize", label="Point Size")[0].val = 0.03
     scriptOp.par.Pointsize.normMin, scriptOp.par.Pointsize.normMax = 0.005, 0.15
@@ -61,6 +67,12 @@ def onSetupParameters(scriptOp):
     menu.menuLabels = palette.PALETTE_NAMES
     menu.val = "ice"
     page.appendPulse("Reset", label="Reseed Cloud")
+
+
+def morph_progress(scriptOp):
+    """How far through an orbital morph this sim is (1 = settled). Handy on a
+    UI and used by the tests."""
+    return float(_state(scriptOp).get("morph", 1.0))
 
 
 def onPulse(par):
@@ -80,21 +92,48 @@ def onCook(scriptOp):
     st = _state(scriptOp)
     orbital = _p(scriptOp, "Orbital", PRESET_NAMES[0])
     n = int(_p(scriptOp, "Count", 20000))
-    speed = float(_p(scriptOp, "Speed", 4.0))
+    speed = float(_p(scriptOp, "Speed", 1.1))
     substeps = int(_p(scriptOp, "Substeps", 2))
-    refresh = float(_p(scriptOp, "Refresh", 0.6))
+    refresh = float(_p(scriptOp, "Refresh", 0.22))
+    morph_time = float(_p(scriptOp, "Morphtime", 8.0))
+    depthcue = float(_p(scriptOp, "Depthcue", 0.75))
     psize = float(_p(scriptOp, "Pointsize", 0.03))
     pal = _p(scriptOp, "Palette", "ice")
 
-    if st.get("key") != (orbital, n) or "pos" not in st:
+    if "pos" not in st or st.get("count") != n:
         state = HydrogenState.preset(orbital)
-        st["state"] = state
+        st["state"] = st["target"] = state
         st["rng"] = np.random.default_rng()
         st["t"] = 0.0
         st["extent"] = 6.0 * state.nmax ** 2 * 0.5 + 6.0
         st["pos"] = _seed(st, n)
-        st["key"] = (orbital, n)
+        st["orbital"] = orbital
+        st["count"] = n
+        st["morph"] = 1.0
         st["out_frame"] = -1
+    elif st.get("orbital") != orbital:
+        # A new orbital does not cut: the cloud is handed a coherent
+        # superposition of where it was and where it is going, and the weight
+        # crosses over during Morphtime, so it reshapes itself continuously.
+        st["from"] = st["state"]
+        st["target"] = HydrogenState.preset(orbital)
+        st["orbital"] = orbital
+        st["morph"] = 0.0 if morph_time > 0 else 1.0
+        st["extent"] = max(st.get("extent", 6.0),
+                           6.0 * st["target"].nmax ** 2 * 0.5 + 6.0)
+
+    if st.get("morph", 1.0) < 1.0:
+        try:
+            rate = 1.0 / max(float(scriptOp.time.rate), 1.0)
+        except Exception:
+            rate = 1.0 / 60.0
+        st["morph"] = min(1.0, st["morph"] + rate / max(morph_time, 1e-3))
+        w = st["morph"]
+        w = w * w * (3.0 - 2.0 * w)                 # ease in and out
+        st["state"] = HydrogenState.blend(st["from"], st["target"], w)
+        st["out_frame"] = -1                        # the field changed this frame
+        if st["morph"] >= 1.0:
+            st["state"] = st["target"]
 
     state = st["state"]
     pos = st["pos"]
@@ -130,10 +169,22 @@ def onCook(scriptOp):
         speeds = np.linalg.norm(v, axis=1)
         vmax = float(np.percentile(speeds, 92)) if speeds.size else 1.0
         col = palette.colorize(palette.normalize(speeds, 0.0, max(vmax, 1e-6), gamma=0.6), pal)
+        # Depth cue: the camera looks down +z, so brightness and point size
+        # follow z. Near electrons read bright and large, far ones sink away,
+        # which is what gives a flat additive cloud its volume.
+        if depthcue > 0.0:
+            ext = max(float(st.get("extent", 6.0)), 1e-6)
+            z = np.clip(pos[:, 2] / ext, -1.0, 1.0).astype(np.float32)
+            near = 0.5 + 0.5 * z                     # 0 far, 1 near
+            col = col * (1.0 - depthcue + depthcue * (0.25 + 1.15 * near))[:, None]
+            np.clip(col, 0.0, 1.0, out=col)
+            size = psize * (1.0 - depthcue * 0.55 + depthcue * 1.1 * near)
+        else:
+            size = np.full(pos.shape[0], psize, dtype=np.float32)
         out = np.empty((7, pos.shape[0]), dtype=np.float32)
         out[0:3] = pos.T.astype(np.float32)
         out[3:6] = col.T
-        out[6] = psize
+        out[6] = size
         st["out"], st["out_frame"] = out, frame
     scriptOp.clear()
     scriptOp.copyNumpyArray(st["out"], baseName="c")
