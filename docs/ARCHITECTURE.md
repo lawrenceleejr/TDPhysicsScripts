@@ -73,7 +73,13 @@ the two cannot drift apart.
 * **Render TOP** — `camera`, `geometry`, `lights` (operator names / patterns).
 * **Constant MAT** — `colorr/g/b`, `alpha`, `applypointcolor`.
 * **Glow** — `blurTOP.size`, then a `compositeTOP` with `operand='add'` over a
-  black `constantTOP`.
+  black `constantTOP`, into an **Out TOP** named `out`. The Out TOP is what
+  gives the scene COMP an output connector.
+* **Wiring only happens inside one network.** `connect()` from an operator
+  inside a COMP to one outside it does nothing and raises nothing. That is why
+  each scene ends in an Out TOP (the COMP's connector is wired to the decks)
+  and why the overlay fetches the Reactor's textures with Select TOPs.
+  `td_build._connect` verifies every wire and reports a miss.
 * **Building** — `parent.create('scriptCHOP', 'sim')`,
   `a.outputConnectors[0].connect(b.inputConnectors[i])`, `appendCustomPage`,
   `appendFloat/Int/Menu/Toggle/Pulse`, parameter `callbacks` + `setuppars` pulse.
@@ -93,7 +99,7 @@ If you'd rather build a scene by hand (or a builder hits a version quirk):
    your repo path. Pulse **Setup Parameters**.
 2. Optional bloom: **Blur TOP** (input = `sim`) → **Composite TOP**
    (`operand = add`, inputs: `sim`, the blur, and a black **Constant TOP**) →
-   **Null TOP** `out`.
+   **Out TOP** `out`.
 
 ### Instanced scene (N-Body / Flow / Soft Body)
 
@@ -106,7 +112,7 @@ If you'd rather build a scene by hand (or a builder hits a version quirk):
    `c0/c1/c2`; Scale `c6/c6/c6`; Instance Colour `c3/c4/c5`.
 4. Assign a **Constant MAT** (any bright base colour) to `geo`.
 5. **Camera COMP** pulled back along +Z; **Render TOP** (`camera`, `geometry`,
-   `lights`) → bloom → **Null TOP** `out`.
+   `lights`) → bloom → **Out TOP** `out`.
 
 ### Polyline scene (LHC / Open Data)
 
@@ -115,7 +121,7 @@ If you'd rather build a scene by hand (or a builder hits a version quirk):
    SOP's Render and Display flags on. Pulse Setup Parameters.
 2. Assign a **Constant MAT** with **Apply Point Color** On to `geo` (this shows
    the per-track `Cd` colours).
-3. **Camera** + **Render TOP** → bloom → **Null TOP** `out`.
+3. **Camera** + **Render TOP** → bloom → **Out TOP** `out`.
 
 ### Static-geometry scene (Feynman)
 
@@ -148,8 +154,9 @@ fields or disagree about the marks toggle.
 
 ### The switcher / crossfader (build_all)
 
-Two **Switch TOP** "decks" each pick a scene `out` (deck A driven by the
-`Scene` menu, deck B by `Nextscene`), and a **Cross TOP** blends them by the
+Two **Switch TOP** "decks" each pick a scene (the scene COMP's output
+connector, fed by its Out TOP; deck A driven by the `Scene` menu, deck B by
+`Nextscene`), and a **Cross TOP** blends them by the
 `Crossfade` parameter (`cross = 0` shows A, `1` shows B). A **Parameter Execute
 DAT** watches the `Cut` pulse and commits a transition (copies B→A, resets the
 fader).

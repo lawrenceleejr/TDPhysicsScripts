@@ -171,10 +171,27 @@ def _create(parent, optype, name, x=0, y=0):
 
 
 def _connect(src, dst, index=0):
+    """Wire ``src``'s output into ``dst``'s input ``index`` -- and check it.
+
+    TouchDesigner only wires operators that sit in the *same* network; a
+    connect() across a COMP boundary does nothing and raises nothing, which is
+    how every scene 'out' -> deck switch wire (and the Reactor textures ->
+    overlay shader) went missing without a word in the report. So the wire is
+    verified after the call and a miss is printed.
+    """
     try:
         src.outputConnectors[0].connect(dst.inputConnectors[index])
     except Exception as e:
         print(f"[td_build] could not connect {src.path} -> {dst.path}[{index}]: {e}")
+        return False
+    try:
+        wired = any(i is not None and i.path == src.path for i in dst.inputs)
+    except Exception:
+        return True                      # cannot check on this build; assume ok
+    if not wired:
+        print(f"[td_build] wire {src.path} -> {dst.path}[{index}] did not take"
+              f" (different networks? {src.parent().path} vs {dst.parent().path})")
+    return wired
 
 
 def _install_callbacks(script_op, callback_filename):
@@ -407,7 +424,11 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     _connect(black, comp, 2)
     _set_res(comp)         # never let a smaller input decide the output size
 
-    out = _create(container, "nullTOP", name, x + 360, y)
+    # The scene's final TOP is an *Out TOP*: it is what gives the scene COMP an
+    # output connector, and only that connector can be wired to the deck
+    # switches one network up (TD does not wire across COMP boundaries).
+    # Intermediate stages (name != "out") stay Null TOPs.
+    out = _create(container, "outTOP" if name == "out" else "nullTOP", name, x + 360, y)
     _connect(comp, out)
     _set_res(out)          # every scene leaves at the master size (upscales
     try:                   # the 256^2 Ising lattice / 320^2 RD state cleanly)
@@ -507,7 +528,7 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _connect(scene_top, over, 1)          # live scene behind
     _set_res(over)
 
-    out = _create(container, "nullTOP", "out", x + 700, y)
+    out = _create(container, "outTOP", "out", x + 700, y)   # see _glow
     _connect(over, out)
     _set_res(out)
     try:
@@ -977,12 +998,16 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         if out is not None:
             outs.append(out)
 
-    # Two selector switches (deck A and deck B) blended by a Cross TOP.
+    # Two selector switches (deck A and deck B) blended by a Cross TOP. The
+    # scenes' Out TOPs give each scene COMP an output connector; that is what
+    # gets wired here (a wire straight from the inner 'out' would cross the
+    # COMP boundary and silently not exist).
     switch_a = _create(base, "switchTOP", "deck_a", -40, 80)
     switch_b = _create(base, "switchTOP", "deck_b", -40, -80)
     for idx, out in enumerate(outs):
-        _connect(out, switch_a, idx)
-        _connect(out, switch_b, idx)
+        feed = _scene_feed(base, out)
+        _connect(feed, switch_a, idx)
+        _connect(feed, switch_b, idx)
     # A Cross TOP cooks both inputs every frame, so with a plain A/B wiring the
     # armed-but-invisible deck would render its whole chain (render, trails,
     # bloom -- or a raymarch) for nothing. Instead, whenever a deck contributes
@@ -1052,6 +1077,21 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             print(f"[td_build] APC surface skipped: {e}")
 
     return base
+
+
+def _scene_feed(base, out):
+    """The operator in ``base``'s network that carries a scene's picture: the
+    scene COMP itself (its Out TOP connector) or, if this build gives the COMP
+    no output connector, a Select TOP pointing at the inner 'out'."""
+    scene = out.parent()
+    try:
+        if len(scene.outputConnectors) > 0:
+            return scene
+    except Exception:
+        pass
+    sel = _create(base, "selectTOP", "feed_" + scene.name, scene.nodeX + 260, scene.nodeY)
+    _setpar(sel, "top", out)
+    return sel
 
 
 def _report_master_chain(switch_a, switch_b, cross, final, n_scenes):
@@ -1382,8 +1422,16 @@ def _waveform_overlay(container, src, reactor, name="wave", x=300, y=0):
     ov = _create(container, "glslTOP", name + "_glsl", x, y - 160)
     _set_res(ov)
     _setpar(ov, "pixeldat", _shader_dat(container, name + "_src", "waveform_tunnel.frag", x, y - 320))
-    _connect(reactor.op("wave_tex"), ov, 0)
-    _connect(reactor.op("spec_tex"), ov, 1)
+    # The textures live inside the Reactor COMP; fetch them into this network
+    # with Select TOPs (a direct wire across the COMP boundary does nothing,
+    # and a GLSL TOP whose shader reads sTD2DInputs[1] with no inputs
+    # connected fails to compile -- the 'wave_glsl has compile errors' line).
+    wave_sel = _create(container, "selectTOP", name + "_tex", x - 160, y - 160)
+    _setpar(wave_sel, "top", reactor.op("wave_tex"))
+    spec_sel = _create(container, "selectTOP", name + "_spec", x - 160, y - 260)
+    _setpar(spec_sel, "top", reactor.op("spec_tex"))
+    _connect(wave_sel, ov, 0)
+    _connect(spec_sel, ov, 1)
     _glsl_uniforms(ov, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
         ("uBeat", rex["beat"]), ("uBass", rex["bass"]), ("uPalette", 3),
