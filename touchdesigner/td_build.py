@@ -375,6 +375,119 @@ def _lit_mat(container, name="lit_mat", x=-200, y=-180, shininess=48.0):
     return mat
 
 
+USE_PBR = True   # PBR MAT under image-based light; False = the Phong rig only
+
+
+def _pbr_mat(container, name="pbr_mat", x=-200, y=-180, metallic=0.15, roughness=0.32,
+             base=(1.0, 1.0, 1.0)):
+    """A physically based material: the studio environment reflects in it as
+    a real softbox highlight and a cold rim, which is most of what 'ray
+    traced' means to the eye. Instance colours multiply the base colour.
+    Falls back to the Phong MAT where this build has no PBR MAT."""
+    mat = _try_create(container, "pbrMAT", name, x, y) if USE_PBR else None
+    if mat is None:
+        return _lit_mat(container, name, x, y)
+    for pn, v in (("basecolorr", base[0]), ("basecolorg", base[1]), ("basecolorb", base[2])):
+        _setpar_any(mat, (pn,), v)
+    _setpar_any(mat, ("metallic",), metallic)
+    _setpar_any(mat, ("roughness",), roughness)
+    _setpar_any(mat, ("specularlevel",), 0.6, quiet=True)
+    return mat
+
+
+def _studio_env(container, name="env", x=-200, y=480, intensity=1.0):
+    """Image-based lighting: a procedural HDR studio (studio_env.frag) on an
+    Environment Light COMP. Returns the light, or None if the COMP type is
+    missing on this build (the point lights still work without it)."""
+    tex = _create(container, "glslTOP", name + "_map", x - 200, y)
+    _setpar(tex, "pixeldat", _shader_dat(container, name + "_src", "studio_env.frag", x - 200, y - 130))
+    _set_res(tex, 512, 256)
+    _setpar_any(tex, ("format",), "rgba16float", quiet=True)
+    _glsl_vec4(tex, 0, "uEnv", ("absTime.seconds", intensity, 0.0, 0.0))
+    env = _try_create(container, "environmentlightCOMP", name, x, y)
+    if env is None:
+        return None
+    _setpar_any(env, ("envlightmap", "map"), tex)
+    _setpar_any(env, ("dimmer",), 1.0, quiet=True)
+    return env
+
+
+def _floor(container, name="floor", x=-260, y=-260, size=60.0, height=-3.2):
+    """A dark, slightly glossy stage under a scene: the key's soft shadow lands
+    on it and the environment reflects in it -- the contact cue that sells a
+    body sitting in real light. Returns the Geometry COMP."""
+    geo = _create(container, "geometryCOMP", name, x, y)
+    for child in list(geo.children):
+        try:
+            child.destroy()
+        except Exception:
+            pass
+    grid = geo.create("gridSOP", "plane")
+    _setpar_any(grid, ("sizex",), size)
+    _setpar_any(grid, ("sizey",), size)
+    _setpar_any(grid, ("rows",), 2, quiet=True)
+    _setpar_any(grid, ("cols",), 2, quiet=True)
+    if _setpar_any(grid, ("orient",), "zx", quiet=True) is None:
+        _setpar(geo, "rx", -90.0)          # lay the XY grid flat instead
+    try:
+        grid.render = grid.display = True
+    except Exception:
+        pass
+    _setpar(geo, "ty", height)
+    mat = _pbr_mat(container, name + "_mat", x, y - 130, metallic=0.0, roughness=0.28,
+                   base=(0.05, 0.05, 0.06))
+    _setpar(geo, "material", mat)
+    return geo
+
+
+def _cinematic(container, render, cam, focus, name="cine", x=380, y=200,
+               dof=0.55, ao=0.9, haze=0.35, haze_color=(0.02, 0.03, 0.06)):
+    """The depth-aware finishing pass (cinema.frag): screen-space ambient
+    occlusion, depth of field about a Focus plane and a cold atmospheric haze.
+    Switch-gated by a 'Cinema' toggle on the scene, so a shader that will not
+    compile on some build leaves the raw render on screen. Returns the TOP to
+    continue the chain from (the raw render if there is no Depth TOP)."""
+    page = _custom_page(container, "VJ")
+    if not hasattr(container.par, "Cinema"):
+        page.appendToggle("Cinema", label="Cinema (AO / depth of field / haze)")
+        _setpar(container, "Cinema", True)
+        page.appendFloat("Focus", label="Focus Distance")
+        _setpar(container, "Focus", focus)
+        page.appendFloat("Dof", label="Depth of Field")
+        _setpar(container, "Dof", dof)
+        page.appendFloat("Haze", label="Haze")
+        _setpar(container, "Haze", haze)
+        try:
+            container.par.Focus.normMin, container.par.Focus.normMax = 1.0, 60.0
+            container.par.Dof.normMin, container.par.Dof.normMax = 0.0, 1.0
+            container.par.Haze.normMin, container.par.Haze.normMax = 0.0, 1.5
+        except Exception:
+            pass
+    depth = _try_create(container, "depthTOP", name + "_depth", x, y - 150)
+    if depth is None or _setpar_any(depth, ("renderop", "rendertop", "top"), render) is None:
+        print(f"[td_build] {container.path}: no Depth TOP; cinema pass skipped")
+        return render
+    # Camera space = linear distance; if that menu value is unknown the shader
+    # linearises the normalized depth itself from the planes set in _camera.
+    linear = _setpar_any(depth, ("depthspace",), "camera", quiet=True) is not None
+
+    cine = _create(container, "glslTOP", name, x, y)
+    _setpar(cine, "pixeldat", _shader_dat(container, name + "_src", "cinema.frag", x, y - 300))
+    _connect(render, cine, 0)
+    _connect(depth, cine, 1)
+    _set_res(cine)
+    _glsl_vec4(cine, 0, "uCam", (CAM_NEAR, CAM_FAR, "parent().par.Focus", "parent().par.Dof"))
+    _glsl_vec4(cine, 1, "uCine", (ao, "parent().par.Haze", "absTime.seconds", 1.0 if linear else 0.0))
+    _glsl_vec4(cine, 2, "uFog", (haze_color[0], haze_color[1], haze_color[2], 1.0))
+
+    gate = _create(container, "switchTOP", name + "_gate", x + 160, y)
+    _connect(render, gate, 0)     # Cinema off: the raw render, pass not cooked
+    _connect(cine, gate, 1)
+    _expr(gate, "index", "1 if parent().par.Cinema.eval() else 0")
+    _set_res(gate)
+    return gate
+
+
 # ---------------------------------------------------------------------------
 # Reusable visual building blocks
 # ---------------------------------------------------------------------------
@@ -405,7 +518,7 @@ def _instanced_geo(container, chop, name, base_color, x, y, look="lit", rows=8, 
     if look == "soft":
         mat = _soft_mat(container, name + "_mat", x, y - 130)
     else:
-        mat = _lit_mat(container, name + "_mat", x, y - 130)
+        mat = _pbr_mat(container, name + "_mat", x, y - 130)
     _setpar(geo, "material", mat)          # assign the OP (TD stores the path)
     _instance_channels(geo, chop)
     return geo, mat
@@ -422,11 +535,16 @@ def _line_geo(container, sop, name, x, y):
     return mat
 
 
+CAM_NEAR, CAM_FAR = 0.5, 200.0    # tight planes: usable depth for the cinema pass
+
+
 def _camera(container, dist, name="cam", tilt=-12.0, x=-200, y=200):
     cam = _create(container, "cameraCOMP", name, x, y)
     _setpar(cam, "tz", dist)
     _setpar(cam, "ty", dist * 0.12)
     _setpar(cam, "rx", tilt)
+    _setpar(cam, "near", CAM_NEAR)
+    _setpar(cam, "far", CAM_FAR)
     return cam
 
 
@@ -442,11 +560,15 @@ def _render(container, geo, cam, light, name="render", x=200, y=200, w=1280, h=7
     """Render TOP. ``light`` may be one Light COMP, a list of them, or None."""
     r = _create(container, "renderTOP", name, x, y)
     _setpar(r, "camera", cam)
-    _setpar(r, "geometry", geo)
+    if isinstance(geo, (list, tuple)):
+        _setpar(r, "geometry", " ".join(g.name for g in geo))
+    else:
+        _setpar(r, "geometry", geo)
     if isinstance(light, (list, tuple)):
-        _setpar(r, "lights", " ".join(l.name for l in light))
+        _setpar(r, "lights", " ".join(l.name for l in light if l is not None))
     elif light is not None:
         _setpar(r, "lights", light)
+    _setpar_any(r, ("antialias",), "aa8", quiet=True)   # smooth silhouettes
     _set_res(r, w, h)
     return r
 
@@ -626,7 +748,8 @@ def build_nbody(dest=None, name="nbody", palette="inferno"):
     cam = _camera(c, dist=26.0)
     lights = _light_rig(c, dest_reactor(dest), shadows=True)
     r = _render(c, geo, cam, lights)
-    tr = _trails(c, r, amount=0.7)
+    cine = _cinematic(c, r, cam, focus=26.0, dof=0.45, ao=0.9, haze=0.3)
+    tr = _trails(c, cine, amount=0.7)
     out = _glow(c, tr, size=18.0, x=640, threshold=0.35)
     _cook_driver(c, sim)
     try:
@@ -652,9 +775,14 @@ def build_particles(dest=None, name="particles", mode="flow", palette="cyber"):
     _orbit(c, geo, default=10.0 if mode == "softbody" else 4.0)
     dist = 10.0 if mode == "softbody" else 15.0
     cam = _camera(c, dist=dist)
-    lights = _light_rig(c, dest_reactor(dest), shadows=(mode == "softbody"))
-    r = _render(c, geo, cam, lights)
-    tr = _trails(c, r, amount=0.88 if mode == "flow" else 0.75)
+    lights = _light_rig(c, dest_reactor(dest), shadows=True)
+    # The soft body sits on a dark stage so the key's shadow has somewhere to
+    # land; the flow fills the volume and wants no floor.
+    scene_geo = [geo, _floor(c, height=-3.4)] if mode == "softbody" else geo
+    r = _render(c, scene_geo, cam, lights)
+    cine = _cinematic(c, r, cam, focus=dist, dof=0.6 if mode == "softbody" else 0.4,
+                      ao=1.0 if mode == "softbody" else 0.7, haze=0.3)
+    tr = _trails(c, cine, amount=0.88 if mode == "flow" else 0.75)
     out = _glow(c, tr, size=18.0, x=640, threshold=0.35)
     _cook_driver(c, sim)
     try:
@@ -693,7 +821,10 @@ def build_lhc(dest=None, name="lhc"):
     _orbit(c, geo, default=9.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
     r = _render(c, geo, cam, None)
-    tr = _trails(c, r, amount=0.0)
+    # Tracks are unlit lines, but depth of field and haze still give the
+    # detector volume its depth: near tracks crisp, far ones sink into haze.
+    cine = _cinematic(c, r, cam, focus=12.0, dof=0.5, ao=0.35, haze=0.45)
+    tr = _trails(c, cine, amount=0.0)
     out = _glow(c, tr, size=12.0, x=640)
     _cook_driver(c, sim)
     try:
@@ -839,7 +970,8 @@ def build_opendata(dest=None, name="opendata"):
     _orbit(c, geo, default=6.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
     r = _render(c, geo, cam, None)
-    tr = _trails(c, r, amount=0.0)
+    cine = _cinematic(c, r, cam, focus=12.0, dof=0.5, ao=0.35, haze=0.45)
+    tr = _trails(c, cine, amount=0.0)
     scene = _glow(c, tr, size=10.0, name="scene", x=640)
     out = _mass_hud(c, scene)
     _cook_driver(c, sim)
@@ -1841,31 +1973,51 @@ def _reactive_bindings(base, reactor, tempo):
 # ---------------------------------------------------------------------------
 # Professional lighting + a compiled glow material
 # ---------------------------------------------------------------------------
-def _light_rig(container, reactor=None, x=-200, y=300, shadows=False):
-    """A 3-point rig: warm key, cool fill, bright rim -- the lighting that
-    makes 3D read as 'pro'. Rim intensity pulses with the beat if a Reactor is
-    given; ``shadows`` asks the key for a soft shadow map. Returns a list of
-    Light COMPs to hand to a Render TOP."""
+def _light_rig(container, reactor=None, x=-200, y=300, shadows=False, env=True):
+    """A low-key, dramatic rig -- the lighting of a rendered still, not a
+    product shot: one strong warm key high on the side (soft shadow map), a
+    fill kept low and cold so shadowed sides fall to near black, a hard cold
+    rim from behind that pulses with the beat, and a coloured practical that
+    slowly circles the scene so highlights travel. All point lights attenuate
+    with distance. With ``env`` the procedural studio environment is added as
+    an Environment Light (image-based lighting: PBR bodies reflect a softbox).
+    Returns a list of lights to hand to a Render TOP."""
     rex = _react_exprs(reactor)
-    def light(name, pos, rgb, dy):
+
+    def light(name, pos, rgb, dy, dimmer=1.0):
         L = _create(container, "lightCOMP", name, x, y - dy)
         _setpar(L, "tx", pos[0]); _setpar(L, "ty", pos[1]); _setpar(L, "tz", pos[2])
         # Light COMP colour is cr/cg/cb (colorr/g/b is the Constant TOP/MAT spelling).
         _setpar_any(L, ("cr", "colorr"), rgb[0])
         _setpar_any(L, ("cg", "colorg"), rgb[1])
         _setpar_any(L, ("cb", "colorb"), rgb[2])
+        _setpar(L, "dimmer", dimmer)
+        _setpar_any(L, ("attenuated",), True, quiet=True)
+        _setpar_any(L, ("attenuationstart",), 4.0, quiet=True)
+        _setpar_any(L, ("attenuationend",), 60.0, quiet=True)
         return L
 
-    key = light("key", (6.0, 7.0, 6.0), (1.0, 0.85, 0.65), 0)
+    key = light("key", (9.0, 11.0, 5.0), (1.0, 0.82, 0.6), 0, dimmer=2.2)
     if shadows:
-        _setpar_any(key, ("shadowtype",), "soft", quiet=True)
+        _setpar_any(key, ("shadowtype",), "soft")
         _setpar_any(key, ("shadowquality",), "high", quiet=True)
-    fill = light("fill", (-7.0, 2.0, 4.0), (0.4, 0.6, 1.0), 120)
-    _setpar(fill, "dimmer", 0.5)
-    rim = light("rim", (0.0, 4.0, -8.0), (0.9, 0.95, 1.0), 240)
+        _setpar_any(key, ("shadowsoftness",), 3.0, quiet=True)
+    fill = light("fill", (-9.0, 1.0, 6.0), (0.3, 0.45, 0.9), 120, dimmer=0.25)
+    rim = light("rim", (-2.0, 5.0, -10.0), (0.7, 0.85, 1.0), 240, dimmer=1.8)
     if reactor is not None:
-        _bindexpr(rim, "dimmer", f"1.0 + 2.0*{rex['beat']}")
-    return [key, fill, rim]
+        _bindexpr(rim, "dimmer", f"1.8 + 2.5*{rex['beat']}")
+    # The practical: a saturated accent that orbits low around the scene.
+    prac = light("practical", (6.0, -2.0, 6.0), (1.0, 0.35, 0.2), 360, dimmer=1.2)
+    _expr(prac, "tx", "8.0 * math.cos(absTime.seconds * 0.21)")
+    _expr(prac, "tz", "8.0 * math.sin(absTime.seconds * 0.21)")
+    if reactor is not None:
+        _bindexpr(prac, "dimmer", f"0.8 + 1.5*{rex['bass']}")
+    lights = [key, fill, rim, prac]
+    if env:
+        e = _studio_env(container, x=x, y=y - 480)
+        if e is not None:
+            lights.append(e)
+    return lights
 
 
 USE_GLSL_MAT = False   # glow_mat.vert/.pixel fail to compile on 2025.3 (error
@@ -1992,7 +2144,7 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000, use_pops=Fa
     # the additive constant ignores them).
     mat = _glow_mat(c, reactor)
     _setpar(geo, "material", mat)
-    lights = _light_rig(c, reactor)
+    lights = _light_rig(c, reactor, shadows=False)
     _orbit(c, geo, default=5.0)
     cam = _camera(c, dist=8.0 if built_pops else 13.0)
     r = _render(c, geo, cam, lights)

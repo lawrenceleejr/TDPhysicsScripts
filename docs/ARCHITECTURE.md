@@ -337,6 +337,19 @@ build. Glance at these:
    `fs` as a fallback spelling). If neither exists on a build, the visible
    scene still animates — TD pulls its Script OP every frame through the
    render — but hidden scenes under `Freerun All` would not advance.
+9. **The render look (PBR / environment light / Depth TOP).** `_pbr_mat`
+   sets `basecolorr/g/b`, `metallic`, `roughness` on a `pbrMAT` (falls back to
+   the Phong MAT if the type is missing); `_studio_env` points an
+   `environmentlightCOMP`'s `envlightmap` at the `studio_env.frag` GLSL TOP;
+   `_light_rig` asks the key for `shadowtype` soft and every light for
+   `attenuated` / `attenuationstart` / `attenuationend`; `_cinematic` creates a
+   `depthTOP` with `renderop` (then `rendertop`, `top`) and tries
+   `depthspace` = camera (if that value is refused the shader linearises the
+   normalized depth from `CAM_NEAR` / `CAM_FAR`, which `_camera` sets on every
+   camera). Each of these logs a line in the build report if the spelling is
+   wrong on your build, and every one degrades: no PBR → Phong, no env light →
+   point lights only, no Depth TOP → the raw render, `Cinema` off → the raw
+   render.
 
 ## Going further
 
