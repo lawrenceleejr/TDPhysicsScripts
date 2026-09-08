@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="822" height="966" viewBox="0 0 822 966">
+<rect width="100%%" height="100%%" fill="#ffffff"/>
+<text x="36.0" y="30.0" font-size="15.0" font-weight="600" fill="#111" text-anchor="start" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >APC mini mk2  ·  PhysicsVJ control map</text>
+<text x="36.0" y="46.0" font-size="9.5" font-weight="400" fill="#666" text-anchor="start" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >grid note = row × 8 + col, row 0 at the bottom · factory mode, MIDI channel 1</text>
+<rect x="36.0" y="640.0" width="72" height="72" rx="6" fill="#fafafa" stroke="#c9c9c9" stroke-width="1"/>
+<text x="72.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" ></text>
+<rect x="116.0" y="640.0" width="72" height="72" rx="6" fill="#fafafa" stroke="#c9c9c9" stroke-width="1"/>
+<text x="152.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" ></text>
+<rect x="196.0" y="640.0" width="72" height="72" rx="6" fill="#fafafa" stroke="#c9c9c9" stroke-width="1"/>
+<text x="232.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" ></text>
+<rect x="276.0" y="640.0" width="72" height="72" rx="6" fill="#fafafa" stroke="#c9c9c9" stroke-width="1"/>
+<text x="312.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" ></text>
+<rect x="356.0" y="640.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="392.0" y="680.0" font-size="9.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >AUTO RESET</text>
+<rect x="436.0" y="640.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="472.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SENS -</text>
+<rect x="516.0" y="640.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="552.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SENS +</text>
+<rect x="596.0" y="640.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="632.0" y="680.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >MUTE</text>
+<rect x="36.0" y="560.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="72.0" y="594.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >POP STORM</text>
+<text x="72.0" y="608.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 8</text>
+<rect x="116.0" y="560.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="152.0" y="594.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BOHMIAN H</text>
+<text x="152.0" y="608.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 9</text>
+<rect x="196.0" y="560.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="232.0" y="594.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FEYNMAN</text>
+<text x="232.0" y="608.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 10</text>
+<rect x="276.0" y="560.0" width="72" height="72" rx="6" fill="#fafafa" stroke="#c9c9c9" stroke-width="1"/>
+<text x="312.0" y="600.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" ></text>
+<rect x="356.0" y="560.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="392.0" y="600.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TAP</text>
+<rect x="436.0" y="560.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="472.0" y="600.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SYNC</text>
+<rect x="516.0" y="560.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="552.0" y="600.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BPM x2</text>
+<rect x="596.0" y="560.0" width="72" height="72" rx="6" fill="#e3f3f5" stroke="#1e7f8c" stroke-width="1"/>
+<text x="632.0" y="600.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BPM /2</text>
+<rect x="36.0" y="480.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="72.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >LHC</text>
+<text x="72.0" y="528.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 4</text>
+<rect x="116.0" y="480.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="152.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >OPEN DATA</text>
+<text x="152.0" y="528.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 5</text>
+<rect x="196.0" y="480.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="232.0" y="514.0" font-size="9.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >REACT-DIFF</text>
+<text x="232.0" y="528.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 6</text>
+<rect x="276.0" y="480.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="312.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RAYMARCH</text>
+<text x="312.0" y="528.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 7</text>
+<rect x="356.0" y="480.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="417.0" cy="491.0" r="4" fill="#7a4fa8"/>
+<text x="392.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >synth</text>
+<text x="392.0" y="528.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 4</text>
+<rect x="436.0" y="480.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="497.0" cy="491.0" r="4" fill="#3fb64a"/>
+<text x="472.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >acid</text>
+<text x="472.0" y="528.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 5</text>
+<rect x="516.0" y="480.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="577.0" cy="491.0" r="4" fill="#5aa7e0"/>
+<text x="552.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ice</text>
+<text x="552.0" y="528.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 6</text>
+<rect x="596.0" y="480.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="657.0" cy="491.0" r="4" fill="#c94a2a"/>
+<text x="632.0" y="514.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >sigma</text>
+<text x="632.0" y="528.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 7</text>
+<rect x="36.0" y="400.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="72.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ISING</text>
+<text x="72.0" y="448.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 0</text>
+<rect x="116.0" y="400.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="152.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >N-BODY</text>
+<text x="152.0" y="448.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 1</text>
+<rect x="196.0" y="400.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="232.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FLOW</text>
+<text x="232.0" y="448.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 2</text>
+<rect x="276.0" y="400.0" width="72" height="72" rx="6" fill="#fbeee3" stroke="#b3541e" stroke-width="1"/>
+<text x="312.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SOFT BODY</text>
+<text x="312.0" y="448.0" font-size="8.5" font-weight="400" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene 3</text>
+<rect x="356.0" y="400.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="417.0" cy="411.0" r="4" fill="#f0842a"/>
+<text x="392.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >inferno</text>
+<text x="392.0" y="448.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 0</text>
+<rect x="436.0" y="400.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="497.0" cy="411.0" r="4" fill="#c9273f"/>
+<text x="472.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >magma</text>
+<text x="472.0" y="448.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 1</text>
+<rect x="516.0" y="400.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="577.0" cy="411.0" r="4" fill="#d64fa3"/>
+<text x="552.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >plasma</text>
+<text x="552.0" y="448.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 2</text>
+<rect x="596.0" y="400.0" width="72" height="72" rx="6" fill="#fbf1e0" stroke="#a8681c" stroke-width="1"/>
+<circle cx="657.0" cy="411.0" r="4" fill="#1fb3c9"/>
+<text x="632.0" y="434.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >cyber</text>
+<text x="632.0" y="448.0" font-size="8.5" font-weight="400" fill="#a8681c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >palette 3</text>
+<rect x="36.0" y="320.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="72.0" y="360.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SCENE &lt;</text>
+<rect x="116.0" y="320.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="152.0" y="360.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SCENE &gt;</text>
+<rect x="196.0" y="320.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="232.0" y="360.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BLACKOUT</text>
+<rect x="276.0" y="320.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="312.0" y="354.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >STROBE</text>
+<text x="312.0" y="368.0" font-size="8.5" font-weight="400" fill="#6b6b6b" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >held</text>
+<rect x="356.0" y="320.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="392.0" y="354.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >KALEIDO</text>
+<text x="392.0" y="368.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="436.0" y="320.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="472.0" y="354.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RGB BOOST</text>
+<text x="472.0" y="368.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="516.0" y="320.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="552.0" y="354.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >STROBE</text>
+<text x="552.0" y="368.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="596.0" y="320.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="632.0" y="354.0" font-size="9.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >NEG / BEAT</text>
+<text x="632.0" y="368.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="36.0" y="240.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="72.0" y="274.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TRAIL MAX</text>
+<text x="72.0" y="288.0" font-size="8.5" font-weight="400" fill="#6b6b6b" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >held</text>
+<rect x="116.0" y="240.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="152.0" y="280.0" font-size="9.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ORBIT FLIP</text>
+<rect x="196.0" y="240.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="232.0" y="280.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >VARIANT</text>
+<rect x="276.0" y="240.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="312.0" y="280.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PALETTE &gt;</text>
+<rect x="356.0" y="240.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="392.0" y="274.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TILES</text>
+<text x="392.0" y="288.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="436.0" y="240.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="472.0" y="274.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SHAKE</text>
+<text x="472.0" y="288.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="516.0" y="240.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="552.0" y="274.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ASCII</text>
+<text x="552.0" y="288.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="596.0" y="240.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="632.0" y="274.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BLUR</text>
+<text x="632.0" y="288.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="36.0" y="160.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="72.0" y="200.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PULSE</text>
+<rect x="116.0" y="160.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="152.0" y="200.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FREEZE</text>
+<rect x="196.0" y="160.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="232.0" y="200.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >HOLD</text>
+<rect x="276.0" y="160.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="312.0" y="194.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TITLE</text>
+<text x="312.0" y="208.0" font-size="8.5" font-weight="400" fill="#6b6b6b" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >held</text>
+<rect x="356.0" y="160.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="392.0" y="194.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >MIRROR</text>
+<text x="392.0" y="208.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="436.0" y="160.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="472.0" y="194.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >MONO</text>
+<text x="472.0" y="208.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="516.0" y="160.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="552.0" y="194.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SOLARIZE</text>
+<text x="552.0" y="208.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="596.0" y="160.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="632.0" y="194.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FISHEYE</text>
+<text x="632.0" y="208.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="36.0" y="80.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="72.0" y="120.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PUNCH</text>
+<rect x="116.0" y="80.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="152.0" y="120.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >BIG PUNCH</text>
+<rect x="196.0" y="80.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="232.0" y="120.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RE-FIRE</text>
+<rect x="276.0" y="80.0" width="72" height="72" rx="6" fill="#f3f3f3" stroke="#6b6b6b" stroke-width="1"/>
+<text x="312.0" y="120.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RESET</text>
+<rect x="356.0" y="80.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="392.0" y="114.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >INVERT</text>
+<text x="392.0" y="128.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="436.0" y="80.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="472.0" y="114.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >EDGES</text>
+<text x="472.0" y="128.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="516.0" y="80.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="552.0" y="114.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >POSTERIZE</text>
+<text x="552.0" y="128.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<rect x="596.0" y="80.0" width="72" height="72" rx="6" fill="#efe7f8" stroke="#7a4fa8" stroke-width="1"/>
+<text x="632.0" y="114.0" font-size="11.0" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PIXELATE</text>
+<text x="632.0" y="128.0" font-size="8.5" font-weight="400" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >toggle</text>
+<text x="192.0" y="72.0" font-size="9.0" font-weight="600" fill="#6b6b6b" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ACTIONS · white, yellow when on</text>
+<text x="512.0" y="72.0" font-size="9.0" font-weight="600" fill="#7a4fa8" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >WHOLE-SCREEN FX · purple, green when on  (shift + pad = clear all)</text>
+<text x="192.0" y="726.0" font-size="9.0" font-weight="600" fill="#b3541e" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SCENE QUEUE · palette colour · press = arm deck B, shift = cut</text>
+<text x="512.0" y="726.0" font-size="9.0" font-weight="600" fill="#1e7f8c" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PALETTES · TEMPO (row 1) · LEVELS (row 0) · cyan, red when on</text>
+<text x="742.0" y="72.0" font-size="9.0" font-weight="600" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SCENE SELECT</text>
+<circle cx="742.0" cy="106.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="138.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ISING</text>
+<text x="742.0" y="149.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: POP STORM</text>
+<circle cx="742.0" cy="186.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="218.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >N-BODY</text>
+<text x="742.0" y="229.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: BOHMIAN H</text>
+<circle cx="742.0" cy="266.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="298.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FLOW</text>
+<text x="742.0" y="309.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: FEYNMAN</text>
+<circle cx="742.0" cy="346.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="378.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SOFT BODY</text>
+<text x="742.0" y="389.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: —</text>
+<circle cx="742.0" cy="426.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="458.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >LHC</text>
+<text x="742.0" y="469.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: —</text>
+<circle cx="742.0" cy="506.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="538.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >OPEN DATA</text>
+<text x="742.0" y="549.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: —</text>
+<circle cx="742.0" cy="586.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="618.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >REACT-DIFF</text>
+<text x="742.0" y="629.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: —</text>
+<circle cx="742.0" cy="666.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="698.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >RAYMARCH</text>
+<text x="742.0" y="709.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: —</text>
+<circle cx="72.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="72.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TITLE</text>
+<text x="72.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: RESET LEDS</text>
+<circle cx="152.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="152.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FREEZE</text>
+<text x="152.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: RE-FIRE</text>
+<circle cx="232.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="232.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PUNCH</text>
+<text x="232.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: BIG PUNCH</text>
+<circle cx="312.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="312.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TAP</text>
+<text x="312.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: SYNC</text>
+<circle cx="392.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="392.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >CLEAR FX</text>
+<text x="392.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: HOLD</text>
+<circle cx="472.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="472.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >PALETTE &gt;</text>
+<text x="472.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: VARIANT</text>
+<circle cx="552.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="552.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >CUT</text>
+<text x="552.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: SCENE &lt;</text>
+<circle cx="632.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="632.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >FREERUN</text>
+<text x="632.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >shift: SCENE &gt;</text>
+<circle cx="742.0" cy="746.0" r="14" fill="#ffffff" stroke="#5a5a5a" stroke-width="1"/>
+<text x="742.0" y="778.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >SHIFT</text>
+<text x="742.0" y="789.0" font-size="7.5" font-weight="400" fill="#5a5a5a" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >hold for 2nd layer</text>
+<rect x="68.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="61.0" y="842" width="22" height="9" rx="2" fill="#333"/>
+<text x="72.0" y="904.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >TRAIL</text>
+<rect x="148.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="141.0" y="851" width="22" height="9" rx="2" fill="#333"/>
+<text x="152.0" y="904.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >ORBIT</text>
+<rect x="228.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="221.0" y="860" width="22" height="9" rx="2" fill="#333"/>
+<text x="232.0" y="904.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >POINT SIZE</text>
+<rect x="308.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="301.0" y="842" width="22" height="9" rx="2" fill="#333"/>
+<text x="312.0" y="904.0" font-size="8.5" font-weight="400" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene dial 4</text>
+<rect x="388.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="381.0" y="851" width="22" height="9" rx="2" fill="#333"/>
+<text x="392.0" y="904.0" font-size="8.5" font-weight="400" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene dial 5</text>
+<rect x="468.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="461.0" y="860" width="22" height="9" rx="2" fill="#333"/>
+<text x="472.0" y="904.0" font-size="8.5" font-weight="400" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene dial 6</text>
+<rect x="548.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="541.0" y="842" width="22" height="9" rx="2" fill="#333"/>
+<text x="552.0" y="904.0" font-size="8.5" font-weight="400" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene dial 7</text>
+<rect x="628.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="621.0" y="851" width="22" height="9" rx="2" fill="#333"/>
+<text x="632.0" y="904.0" font-size="8.5" font-weight="400" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >scene dial 8</text>
+<rect x="708.0" y="816" width="8" height="70" rx="3" fill="#f3f3f3" stroke="#8a8a8a"/>
+<rect x="701.0" y="860" width="22" height="9" rx="2" fill="#333"/>
+<text x="712.0" y="904.0" font-size="8.5" font-weight="600" fill="#1d1d1d" text-anchor="middle" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >CROSSFADE A/B</text>
+<text x="72.0" y="920.0" font-size="8.5" font-weight="400" fill="#666" text-anchor="start" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >faders 1–3: trail / orbit / point size where the scene has them; 4–8: the live scene's physics (FADER_MAP in apc_mini.py)</text>
+<text x="72.0" y="934.0" font-size="8.5" font-weight="400" fill="#666" text-anchor="start" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >LEDs: the live scene pad breathes with the level and jumps on kicks · PULSE flashes on detected kicks · TAP ticks with the tempo · FX pads breathe when on</text>
+<text x="72.0" y="948.0" font-size="8.5" font-weight="400" fill="#666" text-anchor="start" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" >Press animations: punch ripples, big punch flashes, re-fire / reset wipe, title curtains down, palette sparkles, scene cuts ripple in the new palette colour</text>
+</svg>

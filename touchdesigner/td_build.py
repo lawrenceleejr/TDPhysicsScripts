@@ -953,6 +953,25 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
         "        debug('[apc] device', e)\n"
     )
 
+    # Per-frame LED driver: the audio-reactive layer (live pad breathing,
+    # PULSE on kicks, TAP on the tempo, FX pads on the beat) and the press
+    # animations. By-difference sending keeps it to a few MIDI bytes a frame.
+    ticker = _create(c, "executeDAT", "ticker", 300, 200)
+    ticker.text = (
+        "import sys\n"
+        f"sys.path.insert(0, r\"{REPO}\")\n"
+        "from touchdesigner.callbacks import apc_mini\n\n"
+        "def onFrameStart(frame):\n"
+        "    try:\n"
+        "        apc_mini.tick(me.parent())\n"
+        "    except Exception as e:\n"
+        "        if frame % 300 == 0:\n"
+        "            debug('[apc] tick', e)\n"
+    )
+    if not _setpar(ticker, "framestart", True):
+        _setpar(ticker, "fs", True)
+    _setpar(ticker, "active", True)
+
     # Paint the initial LED state now.
     try:
         from touchdesigner.callbacks import apc_mini
@@ -962,8 +981,8 @@ def build_apc(dest=None, target=None, name="APCShow", device=1):
 
     print(f"[td_build] built APC mini mk2 surface -> {c.path} (target {target_path})")
     print("[td_build] In TD's MIDI Device Mapper, map your APC mini mk2 to "
-          f"device id {device}. Press the top-right button (or the Reset par) "
-          "to resync LEDs.")
+          f"device id {device}. Shift + the first track button (or the Reset "
+          "par) resyncs the LEDs.")
     return c
 
 

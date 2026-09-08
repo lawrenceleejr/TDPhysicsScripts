@@ -155,8 +155,12 @@ class _Op:
         self.path = path
         self.par = _Pars()
         self.children = children or {}
+        self.channels = {}          # CHOP channel values for op['name']
         for name, val in pars:
             setattr(self.par, name, _Par(self, name, val))
+
+    def __getitem__(self, name):
+        return self.channels.get(name, 0.0)
 
     def op(self, name):
         o = self
@@ -255,27 +259,118 @@ def test_cut_and_freerun_buttons_are_transport_not_arming():
     assert show.par.Freerunall.val == 0
 
 
-def test_lower_left_quadrant_cuts_scenes_and_shift_arms_deck_b():
-    """Scene pads are the 4x4 lower-left block in reading order; SHIFT + pad
-    arms deck B instead. Nothing outside the block can change Scene."""
+def test_lower_left_quadrant_arms_deck_b_and_shift_cuts():
+    """Scene pads are the 4x4 lower-left block in reading order. A press
+    queues the scene on deck B (for the crossfader); SHIFT + pad cuts."""
     show = _fake_show(11, 8)
     ns = _load_apc(show)
     apc = _surface(show)
     for idx in range(ns["N_SCENES"]):
         col, row = idx % 4, 3 - idx // 4
         ns["on_midi"](apc, "Note On", 1, row * 8 + col, 100)
-        assert show.par.Scene.val == idx
-    # the 4x4 block only holds 16; scenes fill 11 of them, the rest are inert
-    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 3, 100)          # row 0 col 3 = slot 15
-    assert show.par.Scene.val == ns["N_SCENES"] - 1
-    # SHIFT held: arm deck B
+        assert show.par.Nextscene.val == idx
+        assert show.par.Scene.val == 0                        # never cuts unshifted
+    ns["on_midi"](apc, "Note On", 1, 0 * 8 + 3, 100)          # slot 15: no scene, inert
+    assert show.par.Nextscene.val == ns["N_SCENES"] - 1
     ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)
-    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 2, 100)          # scene 2
-    assert show.par.Nextscene.val == 2 and show.par.Scene.val == ns["N_SCENES"] - 1
+    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 2, 100)          # shift: cut to scene 2
+    assert show.par.Scene.val == 2
     ns["on_midi"](apc, "Note Off", 1, ns["SHIFT"], 0)
-    # note-off / zero-velocity presses do nothing
-    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 0, 0)
-    assert show.par.Scene.val == ns["N_SCENES"] - 1
+    ns["on_midi"](apc, "Note On", 1, 3 * 8 + 0, 0)            # zero velocity: nothing
+    assert show.par.Scene.val == 2 and show.par.Nextscene.val == ns["N_SCENES"] - 1
+
+
+def test_right_column_buttons_select_scenes_with_shift_for_the_rest():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    for k in range(8):
+        ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][k], 127)
+        assert show.par.Scene.val == k
+    ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)
+    for k in range(3):
+        ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][k], 127)
+        assert show.par.Scene.val == 8 + k
+    ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][5], 127)  # shift+6 = scene 13: none
+    assert show.par.Scene.val == 10
+    # while shift is held the column shows the shifted layer: scene 10 lit on button 3
+    led = apc.op("ledout")
+    led.sent.clear()
+    ns["repaint"](apc)
+    ns["on_midi"](apc, "Note Off", 1, ns["SHIFT"], 0)
+    lit = {n: v for ch, n, v in led.sent if n in ns["SCENE_BTN"]}
+    assert lit.get(ns["SCENE_BTN"][2]) == 0        # unshifted layer: button 3 = scene 2, not live
+    # shifted layer: Reset LEDs lives on shift + track 1
+    ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)
+    led.sent.clear()
+    ns["on_midi"](apc, "Note On", 1, ns["BTN_RESET"], 127)
+    assert len(led.sent) >= 80 and all(v == 0 for _, _, v in led.sent[:80])
+
+
+def test_leds_react_to_the_audio_and_animate_on_presses():
+    show = _fake_show(11, 8)
+    ns = _load_apc(show)
+    apc = _surface(show)
+    analyze = show.op("Reactor/analyze")
+    pulse_pad = ns["_pad_of"]("action", "pulse")
+    live_pad = ns["_pad_of"]("scene", 0)
+    led = apc.op("ledout")
+    _Clock.seconds = 500.0
+    ns["reset"](apc)
+    # quiet: PULSE dim white, live pad at the lowest breathing step
+    state = {n: (v, ch) for ch, n, v in led.sent}
+    assert state[pulse_pad] == (ns["COL_ACTION"], ns["CH_DIM"])
+    assert state[live_pad][1] == ns["CH_LEVELS"][0]
+    # a kick: PULSE flashes yellow, the live pad jumps to full
+    analyze.channels.update({"beat": 0.9, "level": 0.6})
+    led.sent.clear()
+    ns["tick"](apc)
+    state = {n: (v, ch) for ch, n, v in led.sent}
+    assert state[pulse_pad] == (ns["COL_YELLOW"], ns["CH_BRIGHT"])
+    assert state[live_pad][1] == ns["CH_BRIGHT"]
+    assert len(led.sent) <= 6                     # only the reactive pads moved
+    # muted: nothing reacts
+    analyze.par.Mute.val = 1
+    led.sent.clear()
+    ns["tick"](apc)
+    state = {n: (v, ch) for ch, n, v in led.sent}
+    assert state[pulse_pad] == (ns["COL_ACTION"], ns["CH_DIM"])
+    analyze.par.Mute.val = 0
+    analyze.channels.update({"beat": 0.0, "level": 0.0})
+    ns["tick"](apc)
+    # PUNCH: a white ripple crosses the grid, then everything returns to rest
+    rest = dict(ns["_led_cache"](apc))
+    ns["on_midi"](apc, "Note On", 1, 7 * 8 + 0, 100)
+    _Clock.seconds = 500.15
+    led.sent.clear()
+    ns["tick"](apc)
+    white = [n for ch, n, v in led.sent if v == ns["COL_WHITE"] and ch == ns["CH_BRIGHT"] and n < 64]
+    assert len(white) >= 3
+    _Clock.seconds = 501.5
+    ns["tick"](apc)
+    assert ns["_st"](apc)["anims"] == []
+    after = dict(ns["_led_cache"](apc))
+    assert after == rest
+    # a scene cut from the right column ripples in the new scene's palette colour
+    ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][1], 127)
+    anims = ns["_st"](apc)["anims"]
+    assert len(anims) == 1 and anims[0]["kind"] == "ripple"
+    assert anims[0]["color"] == ns["_scene_color"](show, 1)
+
+
+def test_apc_map_renders_every_control_from_the_tables():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import apc_map
+    ns = apc_map.load_controller()
+    svg = apc_map.render_svg(ns)
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    for name in ns["SCENE_NAMES"]:
+        assert ns["SCENE_LABELS"][name] in svg, name
+    for lab in ns["LABELS"].values():
+        assert apc_map._esc(lab) in svg, lab
+    for pal in ns["_PALETTES"]:
+        assert pal in svg
+    assert svg.count("<rect") >= 64 + 9
 
 
 def test_lower_right_quadrant_sets_palettes_and_tempo_level_tools():
@@ -400,9 +495,9 @@ def test_title_button_holds_while_pressed_and_lingers_on_a_tap():
     ns["on_midi"](apc, "Note Off", 1, 6 * 8 + 3, 0)           # quick tap
     assert abs(show.fetch("title_toff") - (300.1 + ns["TITLE_TAP_SECONDS"])) < 1e-9
     _Clock.seconds = 310.0
-    ns["on_midi"](apc, "Note On", 1, ns["SCENE_BTN"][7], 127)  # round TITLE button
+    ns["on_midi"](apc, "Note On", 1, ns["TRACK_BTN"][0], 127)  # round TITLE button
     _Clock.seconds = 313.0
-    ns["on_midi"](apc, "Note Off", 1, ns["SCENE_BTN"][7], 0)   # long hold -> off now
+    ns["on_midi"](apc, "Note Off", 1, ns["TRACK_BTN"][0], 0)   # long hold -> off now
     assert show.fetch("title_toff") == 313.0
     # the show's own pulse helper
     ns["title_pulse"](show, 2.0)
@@ -433,6 +528,7 @@ def test_refire_pulses_the_live_scenes_signature_event():
     show = _fake_show(11, 8)
     ns = _load_apc(show)
     apc = _surface(show)
+    ns["on_midi"](apc, "Note On", 1, ns["SHIFT"], 127)        # re-fire is shift + track 2
     for idx, pulse in enumerate(ns["REFIRE_PULSE"]):
         show.par.Scene.val = idx
         ns["on_midi"](apc, "Note On", 1, ns["BTN_REFIRE"], 127)
@@ -481,7 +577,9 @@ def test_leds_are_sent_by_difference_and_reset_repaints_everything():
 def test_apc_module_parses_with_required_hooks():
     tree = ast.parse(_src("touchdesigner", "callbacks", "apc_mini.py"))
     funcs = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
-    assert {"on_midi", "repaint", "reset", "onSetupParameters", "onCook"} <= funcs
+    assert {"on_midi", "repaint", "reset", "tick", "perform", "onSetupParameters", "onCook"} <= funcs
+    src = _src("touchdesigner", "td_build.py")
+    assert "apc_mini.tick(me.parent())" in src           # the per-frame LED driver is wired
 
 
 # --- lessons from the first real build report ----------------------------

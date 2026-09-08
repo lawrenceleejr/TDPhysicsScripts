@@ -5,48 +5,58 @@
 # called by the operators td_build wires up:
 #   * a MIDI In DAT  -> on_midi(apc, message, channel, index, value)
 #   * Parameter Execute DATs -> repaint(apc) on show changes, reset(apc) on Reset
+#   * an Execute DAT (frame start) -> tick(apc): audio-reactive LEDs + animations
 #   * the click / space-bar DATs and the show's own pulses -> perform(show, name)
 #
 # ---------------------------------------------------------------------------
 # CONTROL MAP  (factory mode, MIDI channel 1; grid note = row*8 + col, row 0 =
-# bottom). The 8x8 grid is FOUR QUADRANTS:
+# bottom). `python tools/apc_map.py` draws this map (docs/apc_map.svg).
+#
+# The 8x8 grid is FOUR QUADRANTS:
 #
 #   UPPER-LEFT  cols 0-3 rows 4-7   ACTIONS on the live scene ("induce things")
 #       row 7:  PUNCH      BIG PUNCH   RE-FIRE     RESET
 #       row 6:  PULSE      FREEZE      HOLD        TITLE
 #       row 5:  TRAIL MAX  ORBIT FLIP  VARIANT     PALETTE >
 #       row 4:  SCENE <    SCENE >     BLACKOUT    STROBE
-#     PULSE is a manual beat; FREEZE stops every sim; HOLD is the Feynman
-#     'Hold Lit' (Freeze elsewhere); TITLE overlays the scene's physics title
-#     (tap = a few seconds, hold = while held); TRAIL MAX and STROBE act while
-#     held; VARIANT steps the scene's own menu (initial condition, orbital,
-#     form, event order, field).
+#     PULSE is a manual beat (its pad also flashes with every detected kick);
+#     FREEZE stops every sim; HOLD is the Feynman 'Hold Lit' (Freeze elsewhere);
+#     TITLE overlays the scene's physics title (tap = a few seconds, hold =
+#     while held); TRAIL MAX and STROBE act while held; VARIANT steps the
+#     scene's own menu (initial condition, orbital, form, event order, field).
 #
 #   UPPER-RIGHT cols 4-7 rows 4-7   WHOLE-SCREEN FX toggles
 #       row 7:  INVERT     EDGES       POSTERIZE   PIXELATE
 #       row 6:  MIRROR     MONO        SOLARIZE    FISHEYE
 #       row 5:  TILES      SHAKE       ASCII       BLUR
 #       row 4:  KALEIDO    RGB BOOST   STROBE      NEG ON BEAT
-#     SHIFT + any FX pad clears them all.
+#     SHIFT + any FX pad clears them all. Pads that are on breathe with the beat.
 #
-#   LOWER-LEFT  cols 0-3 rows 0-3   SCENES (top-left pad = scene 0, reading
-#       order), cut on deck A. SHIFT + pad arms it on deck B instead.
+#   LOWER-LEFT  cols 0-3 rows 0-3   SCENE QUEUE: the scenes in reading order
+#       (top-left pad = scene 0), lit in their palette colour. Press to ARM a
+#       scene on deck B (it blinks) and ride the master fader / hit CUT;
+#       SHIFT + pad cuts straight to it. The live scene pulses with the music.
 #
 #   LOWER-RIGHT cols 4-7 rows 0-3   PALETTES + TEMPO / LEVEL tools
 #       row 3:  palettes 0-3            row 2: palettes 4-7
-#       row 1:  TAP  SYNC  BPM x2  BPM /2       (tempo engine)
+#       row 1:  TAP  SYNC  BPM x2  BPM /2       (tempo engine; TAP ticks)
 #       row 0:  AUTO RESET  SENS-  SENS+  MUTE  (audio reactor)
 #
+#   SCENE BUTTONS (round, right column, notes 112..119)  SCENE SELECT
+#       button k cuts to scene k (0-7); SHIFT + button k cuts to scene 8+k.
+#       Lit = live scene, blinking = armed on deck B. Holding SHIFT shows the
+#       shifted layer.
 #   TRACK BUTTONS (round, below grid, notes 100..107)
 #       TITLE  FREEZE  PUNCH  TAP  CLEAR FX  PALETTE >  CUT  FREERUN
-#   SCENE BUTTONS (round, right column, notes 112..119)
-#       RESET LEDs  RE-FIRE  SCENE <  SCENE >  BLACKOUT  STROBE  BIG PUNCH  TITLE
+#       + SHIFT: RESET LEDs  RE-FIRE  BIG PUNCH  SYNC  HOLD  VARIANT  SCENE <  SCENE >
 #   FADERS (CC 48..55): the live scene's own parameters (FADER_MAP below;
 #       1-3 are always Trail / Orbit / Point Size where the scene has them).
 #   MASTER FADER (CC 56): Crossfade A/B.
 #
-# LEDs are sent by difference: repaint() remembers what each pad was last told
-# and only re-sends pads that changed. reset() forgets that memory first.
+# LEDs are sent by difference: every frame `tick` works out what each pad
+# should show (base state + audio-reactive layer + running animations) and
+# only re-sends pads that changed. reset() forgets that memory first.
+import math
 import sys, os
 
 _REPO = r""  # <-- set by td_build (or set the TD_PHYSICS_REPO env var)
@@ -126,21 +136,42 @@ TOOL_ROW1 = ["tap", "sync", "bpmx2", "bpmhalf"]
 TOOL_ROW0 = ["autoreset", "sensdown", "sensup", "mute"]
 MOMENTARY = {"trailmax", "strobe", "title"}     # act on press, undo on release
 
+# Short labels for the map / docs (tools/apc_map.py reads these).
+LABELS = {
+    "punch": "PUNCH", "bigpunch": "BIG PUNCH", "refire": "RE-FIRE", "reset": "RESET",
+    "pulse": "PULSE", "freeze": "FREEZE", "hold": "HOLD", "title": "TITLE",
+    "trailmax": "TRAIL MAX", "orbitflip": "ORBIT FLIP", "variant": "VARIANT", "palette": "PALETTE >",
+    "sceneprev": "SCENE <", "scenenext": "SCENE >", "blackout": "BLACKOUT", "strobe": "STROBE",
+    "tap": "TAP", "sync": "SYNC", "bpmx2": "BPM x2", "bpmhalf": "BPM /2",
+    "autoreset": "AUTO RESET", "sensdown": "SENS -", "sensup": "SENS +", "mute": "MUTE",
+    "clearfx": "CLEAR FX", "cut": "CUT", "freerun": "FREERUN", "ledreset": "RESET LEDS",
+    "Invert": "INVERT", "Edges": "EDGES", "Posterize": "POSTERIZE", "Pixelate": "PIXELATE",
+    "Mirror": "MIRROR", "Mono": "MONO", "Solarize": "SOLARIZE", "Fisheye": "FISHEYE",
+    "Tiles": "TILES", "Shake": "SHAKE", "Ascii": "ASCII", "Blur": "BLUR",
+    "Kaleidofx": "KALEIDO", "Rgbboost": "RGB BOOST", "Strobe": "STROBE", "Negflash": "NEG / BEAT",
+}
+SCENE_LABELS = {
+    "ising": "ISING", "nbody": "N-BODY", "flow": "FLOW", "softbody": "SOFT BODY",
+    "lhc": "LHC", "opendata": "OPEN DATA", "rd": "REACT-DIFF", "sdf": "RAYMARCH",
+    "pops": "POP STORM", "hydrogen": "BOHMIAN H", "feynman": "FEYNMAN",
+}
+
 # --- APC mini mk2 hardware map -------------------------------------------
 TRACK_BTN = [100, 101, 102, 103, 104, 105, 106, 107]  # bottom round buttons
 SCENE_BTN = [112, 113, 114, 115, 116, 117, 118, 119]  # right column buttons
 SHIFT = 122
 FADER_CC = [48, 49, 50, 51, 52, 53, 54, 55, 56]       # 9 faders; [8] = master
 TRACK_ACTIONS = ["title", "freeze", "punch", "tap", "clearfx", "palette", "cut", "freerun"]
-SCENE_ACTIONS = ["ledreset", "refire", "sceneprev", "scenenext", "blackout", "strobe", "bigpunch", "title"]
+SHIFT_TRACK_ACTIONS = ["ledreset", "refire", "bigpunch", "sync", "hold", "variant", "sceneprev", "scenenext"]
 BTN_CUT = TRACK_BTN[6]
 BTN_FREERUN = TRACK_BTN[7]
-BTN_RESET = SCENE_BTN[0]
-BTN_REFIRE = SCENE_BTN[1]
+BTN_RESET = TRACK_BTN[0]      # with SHIFT held
+BTN_REFIRE = TRACK_BTN[1]     # with SHIFT held
 
 # sendNoteOn(channel, note, velocity): the channel selects the LED behaviour
 # (mk2: ch1..7 = 10%..100% solid, 8..11 = pulse, 12..16 = blink).
 CH_DIM, CH_MID, CH_BRIGHT, CH_PULSE, CH_BLINK = 2, 4, 7, 10, 14
+CH_LEVELS = [2, 3, 4, 5, 6, 7]     # solid brightness steps for reactive pads
 
 # APC 128-colour palette indices.
 PAL_COLOR = {
@@ -148,14 +179,33 @@ PAL_COLOR = {
     "synth": 49, "acid": 21, "ice": 41, "sigma": 60,
 }
 DEFAULT_COLOR = 3          # white
-COL_ACTION, COL_ACTION_ON = 3, 13      # white / yellow
-COL_FX_OFF, COL_FX_ON = 49, 21         # purple / green
-COL_TOOL, COL_TOOL_ON = 37, 5          # cyan / red
+COL_WHITE, COL_RED, COL_YELLOW, COL_GREEN, COL_CYAN, COL_ICE, COL_PURPLE = 3, 5, 13, 21, 37, 41, 49
+COL_ACTION, COL_ACTION_ON = COL_WHITE, COL_YELLOW
+COL_FX_OFF, COL_FX_ON = COL_PURPLE, COL_GREEN
+COL_TOOL, COL_TOOL_ON = COL_CYAN, COL_RED
 COL_SCENE_EMPTY = 0
 ROUND_OFF, ROUND_ON, ROUND_BLINK = 0, 1, 2
 
 TITLE_TAP_SECONDS = 4.0    # a tapped TITLE stays this long; held stays while held
 TITLE_TAP_MAX = 0.35       # a press shorter than this counts as a tap
+
+# Grid animations fired by button presses: name -> (kind, colour or None for
+# the live palette colour, seconds). Kinds: ripple (from the pressed pad),
+# flash (whole grid, fading), wipe (left->right), wipeback (right->left),
+# curtain (top->bottom), sparkle (random twinkle), blackout (grid goes dark
+# then returns).
+ANIMATIONS = {
+    "punch": ("ripple", COL_WHITE, 0.45), "bigpunch": ("flash", COL_WHITE, 0.55),
+    "refire": ("wipe", None, 0.4), "reset": ("wipeback", None, 0.4),
+    "pulse": ("ripple", COL_YELLOW, 0.3), "freeze": ("flash", COL_ICE, 0.5),
+    "title": ("curtain", COL_WHITE, 0.6), "blackout": ("blackout", 0, 0.6),
+    "variant": ("ripple", COL_CYAN, 0.4), "palette": ("sparkle", None, 0.45),
+    "clearfx": ("wipe", COL_PURPLE, 0.35), "scene": ("ripple", None, 0.5),
+    "sceneprev": ("wipeback", None, 0.35), "scenenext": ("wipe", None, 0.35),
+    "cut": ("flash", None, 0.4), "sync": ("flash", COL_RED, 0.2),
+}
+FX_REGION = (4, 7, 4, 7)          # cols 4-7, rows 4-7
+GRID_REGION = (0, 7, 0, 7)
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +277,21 @@ def _has(o, name):
         return False
 
 
+def _chan(o, name, default=0.0):
+    """A CHOP channel's current value (TD Channel or a plain number)."""
+    try:
+        ch = o[name]
+    except Exception:
+        return default
+    try:
+        return float(ch.eval())
+    except Exception:
+        try:
+            return float(ch)
+        except Exception:
+            return default
+
+
 def _now():
     try:
         return float(absTime.seconds)  # noqa: F821 (TD global)
@@ -234,10 +299,16 @@ def _now():
         return 0.0
 
 
+def _hash(a, b):
+    """A cheap deterministic 0..1 for sparkles."""
+    x = math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+    return x - math.floor(x)
+
+
 # ---------------------------------------------------------------------------
 # Resolving the show + its scenes
 # ---------------------------------------------------------------------------
-_STATE = {}   # per-surface: shift held, tap times, press times, held actions
+_STATE = {}   # per-surface: shift held, tap times, press times, held actions, anims
 
 
 def _st(apc):
@@ -245,7 +316,8 @@ def _st(apc):
         key = apc.path
     except Exception:
         key = id(apc)
-    return _STATE.setdefault(key, {"shift": False, "taps": [], "pressed": {}, "held": {}})
+    return _STATE.setdefault(key, {"shift": False, "taps": [], "pressed": {}, "held": {},
+                                   "anims": [], "base": None})
 
 
 def _target(apc):
@@ -312,6 +384,11 @@ def _palette_holder(t, idx):
 def _scene_palette(t, idx):
     holder = _palette_holder(t, idx)
     return _menu_index(holder, "Palette", -1) if holder is not None else -1
+
+
+def _scene_color(t, idx):
+    p = _scene_palette(t, idx)
+    return PAL_COLOR.get(_PALETTES[p], DEFAULT_COLOR) if 0 <= p < N_PAL else DEFAULT_COLOR
 
 
 def _analyze(t):
@@ -528,6 +605,14 @@ def _decode(note):
     return ("fx", FX_NAMES[(7 - row) * 4 + (col - 4)])
 
 
+def _pad_of(kind, val):
+    """The grid note showing a decoded meaning (None if it has no pad)."""
+    for note in range(64):
+        if _decode(note) == (kind, val):
+            return note
+    return None
+
+
 # ---------------------------------------------------------------------------
 # LED output
 # ---------------------------------------------------------------------------
@@ -568,11 +653,6 @@ def _pad(apc, note, velocity, channel=CH_BRIGHT, force=False):
         pass
 
 
-def _round(apc, note, state):
-    """Light a single-colour round button: 0 off, 1 on, 2 blink."""
-    _pad(apc, note, int(state), CH_BRIGHT)
-
-
 def _blank(apc):
     """Turn every LED off, unconditionally -- the first half of a resync."""
     _led_cache(apc).clear()
@@ -602,68 +682,235 @@ def _action_state(t, name, st):
         return 1 if "trail" in st.get("held", {}) else 0
     if name == "mute":
         return _geti(_analyze(t), "Mute", 0)
+    if name == "freerun":
+        return _geti(t, "Freerunall", 0)
     return 0
 
 
+def _base_frame(apc, t, st):
+    """The resting LED state of every pad and button: {note: (vel, channel)}."""
+    frame = {}
+    live = _live_index(t)
+    nxt = _menu_index(t, "Nextscene", -1)
+    cf = _getf(t, "Crossfade", 0.0)
+    live_pal = _scene_palette(t, live)
+    shift = st.get("shift", False)
+
+    for note in range(64):
+        kind = _decode(note)
+        if kind is None:
+            frame[note] = (COL_SCENE_EMPTY, CH_BRIGHT)
+            continue
+        what, val = kind
+        if what == "scene":
+            col = _scene_color(t, val)
+            if val == live:
+                frame[note] = (col, CH_BRIGHT)
+            elif val == nxt:
+                frame[note] = (col, CH_BLINK)
+            else:
+                frame[note] = (col, CH_DIM)
+        elif what == "palette":
+            col = PAL_COLOR.get(_PALETTES[val], DEFAULT_COLOR)
+            frame[note] = (col, CH_BRIGHT if val == live_pal else CH_DIM)
+        elif what == "action":
+            on = _action_state(t, val, st)
+            frame[note] = (COL_ACTION_ON if on else COL_ACTION, CH_BRIGHT if on else CH_DIM)
+        elif what == "fx":
+            on = _geti(t, val, 0)
+            frame[note] = (COL_FX_ON if on else COL_FX_OFF, CH_BRIGHT if on else CH_DIM)
+        elif what == "tool":
+            on = _action_state(t, val, st)
+            frame[note] = (COL_TOOL_ON if on else COL_TOOL, CH_BRIGHT if on else CH_DIM)
+
+    # Right column: scene select. Lit = live, blink = armed; SHIFT shows 8+k.
+    for k, note in enumerate(SCENE_BTN):
+        idx = k + 8 if shift else k
+        if idx >= N_SCENES:
+            state = ROUND_OFF
+        elif idx == live:
+            state = ROUND_ON
+        elif idx == nxt:
+            state = ROUND_BLINK
+        else:
+            state = ROUND_OFF
+        frame[note] = (state, CH_BRIGHT)
+
+    # Bottom row: lit when the action's state is on; Cut lit mid-fade.
+    names = SHIFT_TRACK_ACTIONS if shift else TRACK_ACTIONS
+    for note, name in zip(TRACK_BTN, names):
+        if name == "cut":
+            state = ROUND_ON if cf > 0 else ROUND_OFF
+        elif name in ("title", "freeze", "blackout", "strobe", "hold", "freerun"):
+            state = ROUND_ON if _action_state(t, name, st) else ROUND_OFF
+        elif name == "ledreset":
+            state = ROUND_BLINK
+        else:
+            state = ROUND_ON
+        frame[note] = (state, CH_BRIGHT)
+    return frame
+
+
+def _reactive(t, frame, st):
+    """The audio-reactive layer: the live scene pad breathes with the level and
+    jumps on each kick, the PULSE pad flashes on detected kicks, the TAP pad
+    ticks with the tempo engine's phase, FX pads that are on breathe with the
+    beat, and STROBE strobes the grid while held. Returns the layered frame."""
+    a = _analyze(t)
+    beat = _chan(a, "beat")
+    level = _chan(a, "level")
+    muted = _geti(a, "Mute", 0)
+    phase = _chan(_tempo(t), "beat")
+    out = dict(frame)
+
+    live_pad = _pad_of("scene", _live_index(t))
+    if live_pad is not None and not muted:
+        vel, _ = frame[live_pad]
+        step = min(len(CH_LEVELS) - 1, int(max(level, beat) * len(CH_LEVELS)))
+        out[live_pad] = (vel, CH_LEVELS[step] if beat < 0.5 else CH_BRIGHT)
+
+    pulse_pad = _pad_of("action", "pulse")
+    if pulse_pad is not None:
+        out[pulse_pad] = (COL_YELLOW, CH_BRIGHT) if (beat > 0.3 and not muted) else (COL_ACTION, CH_DIM)
+
+    tap_pad = _pad_of("tool", "tap")
+    if tap_pad is not None:
+        out[tap_pad] = (COL_RED, CH_BRIGHT) if phase < 0.12 else (COL_TOOL, CH_DIM)
+
+    if not muted:
+        for name in FX_NAMES:
+            if _geti(t, name, 0):
+                pad = _pad_of("fx", name)
+                step = min(len(CH_LEVELS) - 1, 2 + int(beat * 3.99))
+                out[pad] = (COL_FX_ON, CH_LEVELS[step])
+
+    if _geti(t, "Strobe", 0):
+        on = int(_now() * 9.0) % 2 == 0
+        for note in range(64):
+            vel, ch = out[note]
+            out[note] = (vel, CH_BRIGHT) if on else (0, CH_BRIGHT)
+    return out
+
+
+def _animate(st, name, origin=None, color=None):
+    """Queue the grid animation for ``name`` (if it has one)."""
+    spec = ANIMATIONS.get(name)
+    if spec is None:
+        return
+    kind, col, dur = spec
+    if color is not None and col is None:
+        col = color
+    if col is None:
+        col = COL_WHITE
+    region = FX_REGION if name == "clearfx" else GRID_REGION
+    st.setdefault("anims", []).append({
+        "kind": kind, "t0": _now(), "dur": dur, "color": col,
+        "origin": origin if origin is not None else (3.5, 3.5), "region": region,
+    })
+
+
+def _anim_pixel(anim, col, row, p):
+    """What an animation shows on (col, row) at progress p (0..1), or None."""
+    c0, c1, r0, r1 = anim["region"]
+    if not (c0 <= col <= c1 and r0 <= row <= r1):
+        return None
+    kind, color = anim["kind"], anim["color"]
+    w = c1 - c0 + 1
+    if kind == "ripple":
+        oc, orow = anim["origin"]
+        d = math.hypot(col - oc, row - orow)
+        r = p * 11.0
+        if abs(d - r) < 1.0:
+            return (color, CH_BRIGHT)
+        if 0 < r - d < 2.0:
+            return (color, CH_DIM)
+        return None
+    if kind == "flash":
+        return (color, CH_LEVELS[max(0, min(5, int((1.0 - p) * 6)))])
+    if kind == "blackout":
+        return (0, CH_BRIGHT) if p < 0.7 else None
+    if kind in ("wipe", "wipeback"):
+        lead = int(p * w)
+        c = c0 + (lead if kind == "wipe" else w - 1 - lead)
+        if col == c:
+            return (color, CH_BRIGHT)
+        trail = c - 1 if kind == "wipe" else c + 1
+        if col == trail:
+            return (color, CH_MID)
+        return None
+    if kind == "curtain":
+        h = r1 - r0 + 1
+        lead = r1 - int(p * h)
+        if row == lead:
+            return (color, CH_BRIGHT)
+        if row > lead:
+            return (color, CH_DIM)
+        return None
+    if kind == "sparkle":
+        if _hash(col * 8 + row, int(p * 14)) < 0.25:
+            return (color, CH_BRIGHT)
+        return None
+    return None
+
+
+def _overlay_anims(st, frame):
+    """Apply the running animations on top of ``frame``; drop finished ones."""
+    anims = st.get("anims", [])
+    if not anims:
+        return frame
+    now = _now()
+    keep, out = [], dict(frame)
+    for anim in anims:
+        p = (now - anim["t0"]) / anim["dur"] if anim["dur"] > 0 else 1.0
+        if p >= 1.0:
+            continue
+        if p < 0:
+            p = 0.0
+        keep.append(anim)
+        for note in range(64):
+            px = _anim_pixel(anim, note % 8, note // 8, p)
+            if px is not None:
+                out[note] = px
+    st["anims"] = keep
+    return out
+
+
+def _flush(apc, frame):
+    for note, (vel, ch) in frame.items():
+        _pad(apc, note, vel, ch)
+
+
 def repaint(apc):
-    """Drive every LED to reflect the current show state."""
+    """Recompute the resting state from the show and drive every LED (the
+    reactive layer + animations on top, so nothing flickers back)."""
     t = _target(apc)
     if t is None:
         _blank(apc)
         return
     st = _st(apc)
-    live = _live_index(t)
-    nxt = _menu_index(t, "Nextscene", -1)
-    cf = _getf(t, "Crossfade", 0.0)
-    live_pal = _scene_palette(t, live)
+    st["base"] = _base_frame(apc, t, st)
+    _flush(apc, _overlay_anims(st, _reactive(t, st["base"], st)))
 
-    for note in range(64):
-        kind = _decode(note)
-        if kind is None:
-            _pad(apc, note, COL_SCENE_EMPTY, CH_BRIGHT)
-            continue
-        what, val = kind
-        if what == "scene":
-            col = PAL_COLOR.get(_PALETTES[_scene_palette(t, val)] if 0 <= _scene_palette(t, val) < N_PAL else "", DEFAULT_COLOR)
-            if val == live:
-                _pad(apc, note, col, CH_PULSE)
-            elif val == nxt:
-                _pad(apc, note, col, CH_BLINK)
-            else:
-                _pad(apc, note, col, CH_DIM)
-        elif what == "palette":
-            col = PAL_COLOR.get(_PALETTES[val], DEFAULT_COLOR)
-            _pad(apc, note, col, CH_BRIGHT if val == live_pal else CH_DIM)
-        elif what == "action":
-            on = _action_state(t, val, st)
-            _pad(apc, note, COL_ACTION_ON if on else COL_ACTION, CH_BRIGHT if on else CH_DIM)
-        elif what == "fx":
-            on = _geti(t, val, 0)
-            _pad(apc, note, COL_FX_ON if on else COL_FX_OFF, CH_BRIGHT if on else CH_DIM)
-        elif what == "tool":
-            on = _action_state(t, val, st)
-            _pad(apc, note, COL_TOOL_ON if on else COL_TOOL, CH_BRIGHT if on else CH_DIM)
 
-    # Round buttons: lit when their state is on; Cut lit mid-fade.
-    for note, name in zip(TRACK_BTN, TRACK_ACTIONS):
-        if name == "cut":
-            _round(apc, note, ROUND_ON if cf > 0 else ROUND_OFF)
-        elif name == "freerun":
-            _round(apc, note, ROUND_ON if _geti(t, "Freerunall", 0) else ROUND_OFF)
-        elif name in ("title", "freeze", "blackout", "strobe"):
-            _round(apc, note, ROUND_ON if _action_state(t, name, st) else ROUND_OFF)
-        else:
-            _round(apc, note, ROUND_ON)
-    for note, name in zip(SCENE_BTN, SCENE_ACTIONS):
-        if name in ("title", "freeze", "blackout", "strobe"):
-            _round(apc, note, ROUND_ON if _action_state(t, name, st) else ROUND_OFF)
-        else:
-            _round(apc, note, ROUND_ON)
+def tick(apc):
+    """Per frame (Execute DAT): the audio-reactive layer and the animations.
+    Uses the resting state cached by the last repaint, so it costs a few
+    channel reads and, thanks to by-difference sending, only the pads that
+    actually changed go down the wire."""
+    t = _target(apc)
+    if t is None:
+        return
+    st = _st(apc)
+    if st.get("base") is None:
+        st["base"] = _base_frame(apc, t, st)
+    _flush(apc, _overlay_anims(st, _reactive(t, st["base"], st)))
 
 
 def reset(apc):
     """The reset mechanism: blank every LED, then repaint from scratch."""
     _blank(apc)
+    st = _st(apc)
+    st["anims"] = []
     repaint(apc)
 
 
@@ -685,6 +932,7 @@ def on_midi(apc, message, channel, index, value):
     is_on = "note on" in msg and value > 0
     if note == SHIFT:
         st["shift"] = is_on
+        repaint(apc)                 # the round buttons show the shift layer
         return
     if is_on:
         _on_press(apc, t, st, note)
@@ -692,39 +940,58 @@ def on_midi(apc, message, channel, index, value):
         _on_release(apc, t, st, note)
 
 
-def _action_for(note):
-    """The action a non-grid button maps to (None for grid notes)."""
+def _action_for(note, shift=False):
+    """The action a bottom-row button maps to (None otherwise)."""
     if note in TRACK_BTN:
-        return TRACK_ACTIONS[TRACK_BTN.index(note)]
-    if note in SCENE_BTN:
-        return SCENE_ACTIONS[SCENE_BTN.index(note)]
+        names = SHIFT_TRACK_ACTIONS if shift else TRACK_ACTIONS
+        return names[TRACK_BTN.index(note)]
     return None
 
 
 def _on_press(apc, t, st, note):
+    shift = st.get("shift", False)
     if t is None:
         if note == BTN_RESET:
             reset(apc)
         return
     st["pressed"][note] = _now()
+    col, row = note % 8, note // 8
     kind = _decode(note)
     if kind is not None:
         what, val = kind
         if what == "scene":
-            _set_menu(t, "Nextscene" if st.get("shift") else "Scene", val)
+            if shift:
+                _set_menu(t, "Scene", val)
+                _animate(st, "scene", (col, row), _scene_color(t, val))
+            else:
+                _set_menu(t, "Nextscene", val)
         elif what == "palette":
             holder = _palette_holder(t, _live_index(t))
             if holder is not None:
                 _set_menu(holder, "Palette", val)
+                _animate(st, "palette", (col, row), PAL_COLOR.get(_PALETTES[val], DEFAULT_COLOR))
         elif what == "fx":
-            perform(t, "clearfx" if st.get("shift") else val, apc)
+            perform(t, "clearfx" if shift else val, apc)
+            if shift:
+                _animate(st, "clearfx")
         else:                                    # action / tool
             perform(t, val, apc, pressed=True)
+            if val not in ("freeze", "blackout") or _action_state(t, val, st):
+                _animate(st, val, (col, row), _scene_color(t, _live_index(t)))
         repaint(apc)
         return
-    action = _action_for(note)
+    if note in SCENE_BTN:                        # right column: scene select
+        idx = SCENE_BTN.index(note) + (8 if shift else 0)
+        if idx < N_SCENES:
+            _set_menu(t, "Scene", idx)
+            _animate(st, "scene", (7.5, 7 - SCENE_BTN.index(note)), _scene_color(t, idx))
+        repaint(apc)
+        return
+    action = _action_for(note, shift)
     if action is not None:
         perform(t, action, apc, pressed=True)
+        if action not in ("freeze", "blackout") or _action_state(t, action, st):
+            _animate(st, action, (TRACK_BTN.index(note), -0.5), _scene_color(t, _live_index(t)))
         repaint(apc)
 
 
@@ -737,7 +1004,8 @@ def _on_release(apc, t, st, note):
     if kind is not None and kind[0] in ("action", "tool"):
         name = kind[1]
     else:
-        name = _action_for(note)
+        # a shifted press releases the shifted action, too
+        name = _action_for(note, True) if _action_for(note, True) in MOMENTARY else _action_for(note, False)
     if name in MOMENTARY:
         perform(t, name, apc, pressed=False)
         repaint(apc)

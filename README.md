@@ -296,41 +296,43 @@ existing `PhysicsVJ`.)
 mini mk2 to a device id, and set the same id in `APCShow`'s **`Device`**
 parameter (default `1`). Point **`Target`** at your show (default `../PhysicsVJ`).
 
-**The control map** (factory mode, MIDI channel 1). The 8×8 grid is **four
-quadrants**:
+**The control map** (factory mode, MIDI channel 1). `python tools/apc_map.py`
+draws it from the controller's own tables:
 
-```
-        cols 0-3                          cols 4-7
-row 7   PUNCH   BIG PUNCH  RE-FIRE  RESET  | INVERT   EDGES     POSTERIZE PIXELATE
-row 6   PULSE   FREEZE     HOLD     TITLE  | MIRROR   MONO      SOLARIZE  FISHEYE
-row 5   TRAIL+  ORBIT FLIP VARIANT  PAL >  | TILES    SHAKE     ASCII     BLUR
-row 4   SCENE < SCENE >    BLACKOUT STROBE | KALEIDO  RGB BOOST STROBE    NEG/BEAT
-        ---------- ACTIONS ---------------- + ------- WHOLE-SCREEN FX ------------
-row 3   scene 0  scene 1  scene 2  scene 3 | pal 0    pal 1     pal 2     pal 3
-row 2   scene 4  scene 5  scene 6  scene 7 | pal 4    pal 5     pal 6     pal 7
-row 1   scene 8  scene 9  scene 10    -    | TAP      SYNC      BPM x2    BPM /2
-row 0      -        -        -        -    | AUTO RST SENS -    SENS +    MUTE
-        ---------- SCENES ----------------- + ---- PALETTES + TEMPO / LEVELS -----
-```
+![APC mini mk2 control map](docs/apc_map.svg)
+
+The 8×8 grid is **four quadrants**:
 
 | Quadrant | Does |
 |----------|------|
-| **Upper-left: actions** (white; yellow while on) | Induce things in the live scene. **Punch** / **Big Punch** send a shock through the soft body, flow and storm (scenes without a punch re-fire instead). **Re-fire** = new collision / next event / reseed. **Reset** restarts the sim. **Pulse** is a manual beat. **Freeze** stops every sim; **Hold** is the Feynman "hold lit" (Freeze elsewhere). **Title** shows the scene's physics title: tap for a few seconds, hold to keep it up. **Trail+** maxes the trails while held; **Orbit Flip** reverses the camera spin; **Variant** steps the scene's own menu (initial condition, orbital, form, event order, field); **Pal >** next palette. **Scene < / >**, **Blackout**, **Strobe** (while held). |
-| **Upper-right: whole-screen FX** (purple; green while on) | Sixteen toggles applied by the master shader — invert, Sobel edges, posterize, pixelate, mirror, mono, solarize, fisheye, tiles, shake, ASCII, blur, kaleidoscope, RGB boost, strobe, negative-on-beat. **Shift + any FX pad clears them all.** |
-| **Lower-left: scenes** | The eleven scenes in reading order, lit in their palette's colour; the live one **pulses**, the armed one blinks. Press to **instant-cut**; **Shift + pad** arms it on deck B for a crossfade. |
-| **Lower-right: palettes + tools** | Rows 3–2: the eight palettes for the live scene (bright = current). Row 1, tempo engine: **Tap** tempo, **Sync** (re-anchor the beat phase + fire a beat), **BPM ×2 / ÷2**. Row 0, audio reactor: **Auto Reset** (forget the level history), **Sens − / +**, **Mute** (red while on). |
+| **Upper-left: actions** (white; yellow while on) | Induce things in the live scene. **Punch** / **Big Punch** send a shock through the soft body, flow and storm (scenes without a punch re-fire instead). **Re-fire** = new collision / next event / reseed. **Reset** restarts the sim. **Pulse** is a manual beat — and its pad flashes on every kick the reactor hears, so you can see the beat tracking. **Freeze** stops every sim; **Hold** is the Feynman "hold lit" (Freeze elsewhere). **Title** shows the scene's physics title: tap for a few seconds, hold to keep it up. **Trail Max** maxes the trails while held; **Orbit Flip** reverses the camera spin; **Variant** steps the scene's own menu (initial condition, orbital, form, event order, field); **Palette >** next palette. **Scene < / >**, **Blackout**, **Strobe** (while held). |
+| **Upper-right: whole-screen FX** (purple; green while on) | Sixteen toggles applied by the master shader — invert, Sobel edges, posterize, pixelate, mirror, mono, solarize, fisheye, tiles, shake, ASCII, blur, kaleidoscope, RGB boost, strobe, negative-on-beat. Pads that are on breathe with the beat. **Shift + any FX pad clears them all.** |
+| **Lower-left: scene queue** | The eleven scenes in reading order, lit in their palette's colour. Press to **arm** a scene on deck B (it blinks), then ride the master fader or hit **Cut**; **Shift + pad** cuts straight to it. The live scene's pad breathes with the level and jumps on each kick. |
+| **Lower-right: palettes + tools** | Rows 3–2: the eight palettes for the live scene (bright = current). Row 1, tempo engine: **Tap** tempo (the pad ticks red with the tempo's phase), **Sync** (re-anchor the beat phase + fire a beat), **BPM ×2 / ÷2**. Row 0, audio reactor: **Auto Reset** (forget the level history), **Sens − / +**, **Mute** (red while on). |
 
 | Control | Does |
 |---------|------|
-| **Track buttons** (round, below grid) | Title · Freeze · Punch · Tap · **Clear FX** · Palette > · **Cut** (lit mid-fade) · **Freerun All**. |
-| **Scene buttons** (round, right column) | **Reset LEDs** · Re-fire · Scene < · Scene > · Blackout · Strobe · Big Punch · Title. |
+| **Scene buttons** (round, right column) | **Scene select:** button *k* cuts to scene *k* (Ising … Raymarch); **Shift + button 1–3** cuts to POP Storm, Bohmian H, Feynman. Lit = live, blinking = armed. Holding Shift shows the shifted layer. |
+| **Track buttons** (round, below grid) | Title · Freeze · Punch · Tap · **Clear FX** · Palette > · **Cut** (lit mid-fade) · **Freerun All**. With **Shift**: **Reset LEDs** · Re-fire · Big Punch · Sync · Hold · Variant · Scene < · Scene >. |
 | **Faders 1–8** | The live scene's own parameters. 1–3 are always **Trail / Orbit / Point Size** where the scene has them; 4–8 are the physics: Ising temperature + wall glow + sweeps; N-Body G + time step + softening + substeps; Flow/Storm speed + noise scale + evolve + punch strength; Soft Body spin + punch strength; LHC B-field + event period + grow time + scale; Open Data event period + grow time + scale + events kept + HUD opacity; RD feed + kill; SDF speed + twist + zoom + detail + morph; Hydrogen speed + refresh + substeps; Feynman lifetime + traverse + growth + fade + fronts (`FADER_MAP` in `apc_mini.py`). |
 | **Master fader (9)** | **Crossfade** A/B. |
-| **Shift** (bottom-right) | Held: scene pads arm deck B, FX pads clear all FX. |
+| **Shift** (bottom-right) | Held: scene pads cut, FX pads clear all, the round buttons switch to their second layer. |
+
+**Live LEDs.** An Execute DAT drives the surface every frame: the live scene's
+pad breathes with the audio level and jumps to full on each kick, **Pulse**
+flashes yellow on every detected kick (your beat-tracking meter), **Tap** ticks
+red with the tempo engine's phase, FX pads that are on breathe with the beat,
+and Strobe strobes the whole grid while held. Presses fire **grid animations**
+so you can feel a hit land without looking at the screen: Punch ripples white
+outward from the pad, Big Punch flashes the grid and fades, Re-fire / Reset
+wipe across in the live palette colour, Title curtains down from the top,
+Palette sparkles, Freeze flashes ice-blue, Blackout darkens the grid and
+returns, and any scene cut ripples out in the new scene's colour. All of this
+rides on by-difference sending, so a quiet frame costs zero MIDI bytes.
 
 **The reset mechanism.** APC controllers come up dark, can be hot-plugged, and
 their LEDs drift out of sync if the show is also driven from the mouse. The
-top-right **Reset LEDs** button (and the `Reset` parameter) blanks every LED and
+**Shift + track button 1** (and the `Reset` parameter) blanks every LED and
 repaints the full state in one shot — your safety net mid-set. Changing the
 `Device` id re-routes MIDI and resyncs automatically. In normal use LEDs are
 sent *by difference* (only pads whose state changed), so riding a fader costs

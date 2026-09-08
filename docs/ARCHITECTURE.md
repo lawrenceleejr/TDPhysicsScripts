@@ -195,9 +195,10 @@ and three small operators call into it:
   (`note = row*8 + col`) are decoded into one of four quadrants by
   `_decode`: `('scene', i)` lower-left, `('palette', i)` / `('tool', name)`
   lower-right, `('action', name)` upper-left, `('fx', name)` upper-right. The
-  round buttons map to the same action names (`TRACK_ACTIONS`,
-  `SCENE_ACTIONS`); CCs 48–55 are faders (`FADER_MAP`, per live scene), 56 the
-  crossfade; note 122 is Shift. Note-offs matter: actions in `MOMENTARY`
+  right-column buttons (`SCENE_BTN`) are scene select (Shift = scenes 8+),
+  the bottom row maps to action names in two layers (`TRACK_ACTIONS`,
+  `SHIFT_TRACK_ACTIONS`); CCs 48–55 are faders (`FADER_MAP`, per live scene),
+  56 the crossfade; note 122 is Shift. Note-offs matter: actions in `MOMENTARY`
   (Trail+, Strobe, Title) undo on release, and Title distinguishes a tap
   (stays `TITLE_TAP_SECONDS`) from a hold.
 * everything funnels through **`apc_mini.perform(show, action, apc, pressed)`**
@@ -219,6 +220,16 @@ The title overlay is storage-driven: `perform('title')` writes `title_t0` /
 `title_toff` onto the PhysicsVJ COMP, and `_title_overlay` in the builder binds
 the ink shader's bleed/fade and the gating Switch to `parent().fetch(...)` of
 those two numbers, so no per-frame Python runs for it.
+
+* an **Execute DAT** (`ticker`) that calls `apc_mini.tick(apc)` at every frame
+  start. The LED picture is composed in three layers: `_base_frame` (the
+  resting state from the show's parameters, cached by `repaint`),
+  `_reactive` (reads the Reactor's `beat`/`level` and the Tempo's phase and
+  re-lights the live scene pad, the Pulse pad, the Tap pad and any FX pads that
+  are on) and `_overlay_anims` (short press animations queued by `_animate`:
+  ripple, flash, wipe, curtain, sparkle, blackout, each a pure function of
+  progress so they cost nothing to keep and cannot get stuck). Only the final
+  composed frame is sent, by difference.
 
 LEDs are sent **by difference**: `repaint` remembers what every pad was last
 told (per surface, in `_LED_STATE`) and only re-sends pads whose state changed,
