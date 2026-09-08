@@ -55,10 +55,14 @@ def onSetupParameters(scriptOp):
     # The lifetime of a line, as a share of a whole traverse: tail * traverse
     # seconds. Long, and the field fills up and sits there; short, and the
     # pattern is always turning over. The website reads this off the scroll.
-    page.appendFloat("Tail", label="Line Lifetime")[0].val = 0.3
+    page.appendFloat("Tail", label="Line Lifetime")[0].val = 0.4
     scriptOp.par.Tail.normMin, scriptOp.par.Tail.normMax = 0.05, 1.2
-    page.appendFloat("Traverse", label="Seconds / Traverse")[0].val = 30.0
-    scriptOp.par.Traverse.normMin, scriptOp.par.Traverse.normMax = 4.0, 90.0
+    page.appendFloat("Traverse", label="Seconds / Traverse")[0].val = 45.0
+    scriptOp.par.Traverse.normMin, scriptOp.par.Traverse.normMax = 4.0, 180.0
+    # How many of its own lengths the front travels while a line draws itself:
+    # the creep. 2 pops lines out; 6-10 lets each be watched growing.
+    page.appendFloat("Growlen", label="Growth (line lengths)")[0].val = 6.0
+    scriptOp.par.Growlen.normMin, scriptOp.par.Growlen.normMax = 1.0, 12.0
     page.appendFloat("Fade", label="Fade Share")[0].val = 0.5
     scriptOp.par.Fade.normMin, scriptOp.par.Fade.normMax = 0.05, 1.0
     page.appendInt("Walkers", label="Fronts")[0].val = 3
@@ -118,14 +122,16 @@ def _show(scriptOp, st):
         if not os.path.exists(path):
             return None
         show = FeynmanShow(path, world=world, marks=marks, walkers=walkers,
-                           tail=tail, traverse=float(_p(scriptOp, "Traverse", 30.0)),
-                           fade=float(_p(scriptOp, "Fade", 0.5)))
+                           tail=tail, traverse=float(_p(scriptOp, "Traverse", 45.0)),
+                           fade=float(_p(scriptOp, "Fade", 0.5)),
+                           grow_len=float(_p(scriptOp, "Growlen", 6.0)))
         st.update(show=show, key=key, walkers=walkers, t=None, frame=None)
 
     # The dials that need no rebuild.
     show.flood.tail = tail
-    show.flood.traverse = max(0.5, float(_p(scriptOp, "Traverse", 30.0)))
+    show.flood.traverse = max(0.5, float(_p(scriptOp, "Traverse", 45.0)))
     show.flood.fade = float(_p(scriptOp, "Fade", 0.5))
+    show.flood.grow_len = float(_p(scriptOp, "Growlen", 6.0))
     show.set_palette(str(_p(scriptOp, "Palette", "sigma")))
     if st.get("walkers") != walkers:
         show.flood.reseed(walkers)

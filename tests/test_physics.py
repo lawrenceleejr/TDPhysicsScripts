@@ -438,3 +438,35 @@ def test_curl_flow_interpolation_matches_three_index_gather():
     c11 = fld[ix, iy + 1, iz + 1] * (1 - fx) + fld[ix + 1, iy + 1, iz + 1] * fx
     ref = (c00 * (1 - fy) + c10 * fy) * (1 - fz) + (c01 * (1 - fy) + c11 * fy) * fz
     assert np.array_equal(f.velocity_at(pos), ref)
+
+
+def test_softbody_punch_barrels_through_and_settles():
+    """A punch sends a bulge across the body: the deviation from the matched
+    shape rises well above rest, then shape matching restores it."""
+    body = ShapeMatchedSoftBody(n=1200, radius=2.0, seed=6, wobble=0.0)
+    for _ in range(30):
+        body.step(1 / 60)
+    rest = float(body.stress().mean())
+    body.punch(1.0, direction=(1.0, 0.0, 0.0))
+    peak = 0.0
+    for _ in range(90):
+        body.step(1 / 60)
+        peak = max(peak, float(body.stress().mean()))
+    assert peak > 6 * rest + 0.05, (peak, rest)
+    for _ in range(240):
+        body.step(1 / 60)
+    assert float(body.stress().mean()) < 3 * rest + 0.02
+    assert np.isfinite(body.pos).all() and not body._waves
+
+
+def test_flow_punch_blasts_outward_then_fades():
+    flow = CurlNoiseFlow(n=3000, bounds=5.0, seed=3)
+    r0 = np.linalg.norm(flow.pos, axis=1).mean()
+    flow.punch(1.0)
+    flow.step(1 / 60)
+    outward = ((flow.vel * flow.pos).sum(axis=1) > 0).mean()
+    assert outward > 0.9                         # nearly everything moving out
+    for _ in range(180):
+        flow.step(1 / 60)
+    assert flow._burst == 0.0
+    assert np.abs(flow.pos).max() <= 5.0 + 1e-6  # still wrapped in the box

@@ -421,7 +421,8 @@ def test_instancing_reads_channel_names_off_the_sim():
     (z, r, g). Every instanced scene must go through _instance_channels."""
     src = _src("touchdesigner", "td_build.py")
     assert '"instancetx", "c0"' not in src
-    assert src.count("_instance_channels(") >= 4          # def + 3 scenes
+    assert src.count("_instance_channels(") >= 3          # def, _instanced_geo, storm
+    assert 'look="soft"' in src and 'look="lit"' in src   # hydrogen soft, bodies lit
     td_build = importlib.import_module("touchdesigner.td_build")
 
     class _Ch:

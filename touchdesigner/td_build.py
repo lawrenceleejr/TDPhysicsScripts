@@ -323,13 +323,51 @@ def _instance_channels(geo, chop):
 
 
 # ---------------------------------------------------------------------------
+# Materials
+# ---------------------------------------------------------------------------
+def _soft_mat(container, name="soft_mat", x=-200, y=-180, alpha=0.45):
+    """Additive, depth-free Constant MAT: the look for clouds of small points.
+
+    Overlapping instances add up instead of occluding, so a dense cloud reads
+    as a soft glow (and the bloom pass finishes the job). The per-instance
+    colour multiplies the MAT's white.
+    """
+    mat = _create(container, "constantMAT", name, x, y)
+    for pn, v in (("colorr", 1.0), ("colorg", 1.0), ("colorb", 1.0), ("alpha", alpha)):
+        _setpar(mat, pn, v)
+    _setpar(mat, "applypointcolor", False)
+    _setpar_any(mat, ("blending",), True)
+    _setpar_any(mat, ("srcblend", "srcblendmode"), "srcalpha")
+    _setpar_any(mat, ("destblend", "dstblend", "destblendmode"), "one")
+    _setpar_any(mat, ("depthwrite", "writedepth"), False, quiet=True)
+    return mat
+
+
+def _lit_mat(container, name="lit_mat", x=-200, y=-180, shininess=48.0):
+    """A Phong MAT for solid instanced bodies, lit by the 3-point rig: soft
+    diffuse, a glossy highlight, a little cool ambient so shadowed sides are
+    not pure black. Instance colours multiply the diffuse."""
+    mat = _try_create(container, "phongMAT", name, x, y)
+    if mat is None:
+        return _soft_mat(container, name, x, y, alpha=1.0)
+    for pn, v in (("diffr", 0.95), ("diffg", 0.95), ("diffb", 0.95),
+                  ("specr", 0.7), ("specg", 0.7), ("specb", 0.7),
+                  ("ambr", 0.05), ("ambg", 0.06), ("ambb", 0.10)):
+        _setpar(mat, pn, v)
+    _setpar_any(mat, ("shininess",), shininess)
+    return mat
+
+
+# ---------------------------------------------------------------------------
 # Reusable visual building blocks
 # ---------------------------------------------------------------------------
-def _instanced_geo(container, chop, name, base_color, x, y):
-    """Geometry COMP that instances a small glowing sphere at each CHOP sample.
+def _instanced_geo(container, chop, name, base_color, x, y, look="lit", rows=8, cols=12):
+    """Geometry COMP that instances a small sphere at each CHOP sample.
 
     Expects the CHOP channels produced by the nbody/particles callbacks:
-    c0,c1,c2 = position; c3,c4,c5 = colour; c6 = scale.
+    position, colour, scale (whatever this build names them). ``look`` is
+    "lit" (Phong under the light rig; solid bodies) or "soft" (additive
+    constant; clouds).
     """
     geo = _create(container, "geometryCOMP", name, x, y)
     for child in list(geo.children):
@@ -339,20 +377,18 @@ def _instanced_geo(container, chop, name, base_color, x, y):
             pass
     sph = geo.create("sphereSOP", "shape")
     _setpar(sph, "type", "poly")
-    _setpar(sph, "rows", 6)
-    _setpar(sph, "cols", 8)
+    _setpar(sph, "rows", rows)
+    _setpar(sph, "cols", cols)
     try:
         sph.render = True
         sph.display = True
     except Exception:
         pass
 
-    mat = _create(container, "constantMAT", name + "_mat", x, y - 130)
-    _setpar(mat, "colorr", base_color[0])
-    _setpar(mat, "colorg", base_color[1])
-    _setpar(mat, "colorb", base_color[2])
-    _setpar(mat, "applypointcolor", False)
-
+    if look == "soft":
+        mat = _soft_mat(container, name + "_mat", x, y - 130)
+    else:
+        mat = _lit_mat(container, name + "_mat", x, y - 130)
     _setpar(geo, "material", mat)          # assign the OP (TD stores the path)
     _instance_channels(geo, chop)
     return geo, mat
@@ -386,10 +422,13 @@ def _light(container, name="light", x=-200, y=120):
 
 
 def _render(container, geo, cam, light, name="render", x=200, y=200, w=1280, h=720):
+    """Render TOP. ``light`` may be one Light COMP, a list of them, or None."""
     r = _create(container, "renderTOP", name, x, y)
     _setpar(r, "camera", cam)
     _setpar(r, "geometry", geo)
-    if light is not None:
+    if isinstance(light, (list, tuple)):
+        _setpar(r, "lights", " ".join(l.name for l in light))
+    elif light is not None:
         _setpar(r, "lights", light)
     _set_res(r, w, h)
     return r
@@ -563,13 +602,15 @@ def build_nbody(dest=None, name="nbody", palette="inferno"):
     sim = _create(c, "scriptCHOP", "sim", -500, 0)
     _install_callbacks(sim, "nbody_chop.py")
     _setpar(sim, "Palette", palette)
-    geo, _ = _instanced_geo(c, sim, "geo", (1.0, 0.55, 0.15), -260, 0)
+    # Smooth spheres (only ~600 of them), Phong-lit by the 3-point rig with a
+    # soft shadow from the key: reads as solid bodies in a dark room.
+    geo, _ = _instanced_geo(c, sim, "geo", (1.0, 0.55, 0.15), -260, 0, look="lit", rows=14, cols=20)
     _orbit(c, geo, default=7.0)
     cam = _camera(c, dist=26.0)
-    light = _light(c)
-    r = _render(c, geo, cam, light)
-    tr = _trails(c, r, amount=0.85)
-    out = _glow(c, tr, size=16.0, x=640)
+    lights = _light_rig(c, dest_reactor(dest), shadows=True)
+    r = _render(c, geo, cam, lights)
+    tr = _trails(c, r, amount=0.7)
+    out = _glow(c, tr, size=18.0, x=640, threshold=0.35)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
@@ -587,14 +628,17 @@ def build_particles(dest=None, name="particles", mode="flow", palette="cyber"):
     _setpar(sim, "Mode", mode)
     _setpar(sim, "Palette", palette)
     base_col = (0.1, 0.8, 1.0) if mode == "flow" else (1.0, 0.2, 0.9)
-    geo, _ = _instanced_geo(c, sim, "geo", base_col, -260, 0)
+    if mode == "softbody":
+        geo, _ = _instanced_geo(c, sim, "geo", base_col, -260, 0, look="lit", rows=8, cols=12)
+    else:
+        geo, _ = _instanced_geo(c, sim, "geo", base_col, -260, 0, look="lit", rows=5, cols=8)
     _orbit(c, geo, default=10.0 if mode == "softbody" else 4.0)
     dist = 10.0 if mode == "softbody" else 15.0
     cam = _camera(c, dist=dist)
-    light = _light(c)
-    r = _render(c, geo, cam, light)
-    tr = _trails(c, r, amount=0.9 if mode == "flow" else 0.8)
-    out = _glow(c, tr, size=18.0, x=640)
+    lights = _light_rig(c, dest_reactor(dest), shadows=(mode == "softbody"))
+    r = _render(c, geo, cam, lights)
+    tr = _trails(c, r, amount=0.88 if mode == "flow" else 0.75)
+    out = _glow(c, tr, size=18.0, x=640, threshold=0.35)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
@@ -602,6 +646,14 @@ def build_particles(dest=None, name="particles", mode="flow", palette="cyber"):
         pass
     print(f"[td_build] built Particles ({mode}) -> {c.path}")
     return c
+
+
+def dest_reactor(dest):
+    """The Reactor COMP beside the scenes being built, if build_all made one."""
+    try:
+        return dest.op("Reactor") if dest is not None else None
+    except Exception:
+        return None
 
 
 def build_lhc(dest=None, name="lhc"):
@@ -908,7 +960,7 @@ def _orbit(container, geo, default=8.0):
             container.par.Orbit.normMin, container.par.Orbit.normMax = -45, 45
         except Exception:
             pass
-    _expr(geo, "ry", "parent().par.Orbit * absTime.seconds")
+    _expr(geo, "ry", "(parent().par.Orbit.eval() * absTime.seconds) % 360")
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +993,9 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         page.appendPulse("Cut", label="Cut To B (commit)")
         page.appendToggle("Freerunall", label="Freerun All (evolve hidden scenes)")
         _setpar(base, "Freerunall", False)
+        page.appendToggle("Clickpunch", label="Click / Space = Punch live scene")
+        _setpar(base, "Clickpunch", True)
+        page.appendPulse("Punch", label="Punch live scene")
     except Exception as e:
         print(f"[td_build] top-level control page setup hit a snag: {e}")
 
@@ -982,8 +1037,10 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     )
 
     outs = []
+    scene_names = []
     for i, (label, builder, kwargs) in enumerate(SCENES):
         scene = globals()[builder](dest=base, **kwargs)
+        scene_names.append(scene.name)
         scene.nodeX, scene.nodeY = -600, 260 - i * 170
         # Cook a scene only while its deck actually contributes to the mix
         # (deck A unless fully faded to B, deck B unless fully faded to A),
@@ -1064,6 +1121,12 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
 
     # Make the whole show breathe: bind scene params to the audio + tempo.
     _reactive_bindings(base, reactor, tempo)
+    try:
+        base.store("scene_names", scene_names)
+    except Exception:
+        pass
+    _punch_controls(base)
+    _scene_health(outs)
 
     print(f"[td_build] built PhysicsVJ with {len(outs)} scenes -> {base.path}")
     print("[td_build] View 'out' in Perform mode. Cut with 'Scene'; blend with "
@@ -1198,6 +1261,19 @@ def _glsl_uniforms(top, scalars, start=0):
     return slot
 
 
+def _glsl_vec4(top, slot, uname, values):
+    """Fill one Vectors slot with a vec4 uniform: ``values`` are four
+    expression strings or numbers for x, y, z, w."""
+    _setpar(top, f"uniname{slot}", uname)
+    for comp, val in zip("xyzw", values):
+        pn = f"value{slot}{comp}"
+        if isinstance(val, str):
+            _bindexpr(top, pn, val)
+        else:
+            _setpar(top, pn, val)
+    return slot + 1
+
+
 def _react_exprs(reactor):
     """Expression strings reading the Reactor's analyze CHOP (or constants)."""
     keys = ("bass", "mid", "high", "level", "beat", "bpm")
@@ -1324,7 +1400,17 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     _setpar(state, "format", "rgba32float")
     _setpar(state, "pixeldat", _shader_dat(c, "rd_state_src", "reaction_diffusion.frag", -200, 150))
 
+    # A Feedback TOP needs an input ("Not enough sources specified" without
+    # one): it is the reset image and sets the loop's size and format. A flat
+    # (u=1, v=0) 32-bit constant is the resting chemistry; the shader's sparks
+    # seed the pattern from there.
+    seed = _create(c, "constantTOP", "rd_seed", -600, 0)
+    for pn, v in (("colorr", 1.0), ("colorg", 0.0), ("colorb", 0.0), ("alpha", 1.0)):
+        _setpar(seed, pn, v)
+    _set_res(seed, res, res)
+    _setpar_any(seed, ("format",), "rgba32float", quiet=True)
     fb = _create(c, "feedbackTOP", "rd_fb", -400, 0)
+    _connect(seed, fb, 0)
     _set_res(fb, res, res)  # same size as the state, or the loop resamples
     _setpar(fb, "top", state)             # (and blurs) the chemistry each frame
     _connect(fb, state, 0)
@@ -1371,6 +1457,26 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
         c.par.Reseed.pulse()  # seed the pattern now
     except Exception:
         pass
+    for pn in ("resetpulse", "reset"):
+        try:
+            getattr(fb.par, pn).pulse()   # load the seed image into the loop
+            break
+        except Exception:
+            continue
+    # Run the chemistry a few frames and report what the state holds: a dead
+    # loop (all u=1, v=0), a poisoned one (NaN) and a live one look alike in
+    # the network editor but not here.
+    try:
+        for _ in range(12):
+            state.cook(force=True)
+        arr = state.numpyArray()
+        u, v = arr[..., 0], arr[..., 1]
+        import numpy as _np
+        print(f"[td_build] rd state after 12 frames: u mean {float(_np.nanmean(u)):.3f} "
+              f"v mean {float(_np.nanmean(v)):.4f} v max {float(_np.nanmax(v)):.3f} "
+              f"nan {float(_np.isnan(arr).mean()):.4f} size {arr.shape[1]}x{arr.shape[0]}")
+    except Exception as e:
+        print(f"[td_build] rd state check failed: {e}")
     print(f"[td_build] built Reaction-Diffusion -> {c.path}")
     return c
 
@@ -1385,18 +1491,45 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
     tex = _tempo_exprs(tempo)
     _glsl_scene_palette(c, palette_index)
     page = _custom_page(c, "VJ")
-    if not hasattr(c.par, "Reseed"):
-        page.appendPulse("Reseed", label="New Form")
+    if not hasattr(c.par, "Shape"):
+        m = page.appendMenu("Shape", label="Form")[0]
+        m.menuNames = ["metaballs", "gyroid", "fractal", "knot"]
+        m.menuLabels = ["Metaballs", "Gyroid lattice", "IFS fractal", "Torus knot"]
+        m.val = "metaballs"
+        page.appendFloat("Speed", label="Speed")[0].val = 1.0
+        c.par.Speed.normMin, c.par.Speed.normMax = 0.0, 4.0
+        page.appendFloat("Twist", label="Twist")[0].val = 1.0
+        c.par.Twist.normMin, c.par.Twist.normMax = 0.0, 4.0
+        page.appendFloat("Zoom", label="Zoom")[0].val = 1.0
+        c.par.Zoom.normMin, c.par.Zoom.normMax = 0.3, 3.0
+        page.appendInt("Detail", label="Detail")[0].val = 2
+        c.par.Detail.normMin, c.par.Detail.normMax = 1, 4
+        page.appendFloat("Morph", label="Morph")[0].val = 0.5
+        c.par.Morph.normMin, c.par.Morph.normMax = 0.0, 1.0
+        page.appendPulse("Reseed", label="Next Form")
+    # 'Next Form' steps the Shape menu.
+    stepper = _create(c, "parameterexecuteDAT", "formstep", -120, 320)
+    _setpar(stepper, "op", c)
+    _setpar(stepper, "pars", "Reseed")
+    _setpar(stepper, "onpulse", True)
+    _setpar(stepper, "active", True)
+    stepper.text = (
+        "def onPulse(par):\n"
+        "    p = par.owner.par.Shape\n"
+        "    p.menuIndex = (p.menuIndex + 1) % len(p.menuNames)\n"
+    )
 
     sdf = _create(c, "glslTOP", "sdf", -120, 0)
     _set_res(sdf)
     _setpar(sdf, "pixeldat", _shader_dat(c, "sdf_src", "raymarch.frag", -120, 160))
-    _glsl_uniforms(sdf, [
-        ("uTime", "absTime.seconds"),
-        ("uBass", rex["bass"]), ("uMid", rex["mid"]), ("uHigh", rex["high"]),
-        ("uLevel", rex["level"]), ("uBeat", rex["beat"]), ("uBar", tex["bar"]),
-        ("uPalette", "parent().par.Palette.menuIndex"),
-    ])
+    # Packed vec4 uniforms: four Vectors slots carry everything the shader
+    # needs (each slot is a vec4; a float uniform would read only .x).
+    _glsl_vec4(sdf, 0, "uAudio", (rex["bass"], rex["mid"], rex["high"], rex["level"]))
+    _glsl_vec4(sdf, 1, "uTempo", (rex["beat"], tex["bar"], "absTime.seconds",
+                                   "parent().par.Palette.menuIndex"))
+    _glsl_vec4(sdf, 2, "uCtrl", ("parent().par.Shape.menuIndex", "parent().par.Speed",
+                                  "parent().par.Twist", "parent().par.Zoom"))
+    _glsl_vec4(sdf, 3, "uCtrl2", ("parent().par.Detail", "parent().par.Morph", 0.0, 0.0))
 
     out = _glow(c, sdf, size=10.0, x=120)
     _cook_driver(c, sdf)
@@ -1470,6 +1603,82 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     return post
 
 
+def _punch_controls(base):
+    """A hit on the live scene from a mouse click anywhere, the space bar, or
+    the show's own Punch pulse: pulses the live scene sim's 'Punch' (a shock
+    wave through the soft body, a blast through the flow / storm). Scenes
+    without a Punch ignore it. The APC re-fire button does the same."""
+    code = (
+        "def _live_sim():\n"
+        "    c = me.parent()\n"
+        "    try:\n"
+        "        names = c.fetch('scene_names', [])\n"
+        "        name = names[int(c.par.Scene.menuIndex)]\n"
+        "        return c.op(name + '/sim')\n"
+        "    except Exception:\n"
+        "        return None\n"
+        "\n"
+        "def punch():\n"
+        "    sim = _live_sim()\n"
+        "    if sim is not None and hasattr(sim.par, 'Punch'):\n"
+        "        sim.par.Punch.pulse()\n"
+        "\n"
+    )
+    # 1) the show's own pulse
+    pe = _create(base, "parameterexecuteDAT", "puncher", -200, -460)
+    _setpar(pe, "op", base)
+    _setpar(pe, "pars", "Punch")
+    _setpar(pe, "onpulse", True)
+    _setpar(pe, "active", True)
+    pe.text = code + "def onPulse(par):\n    punch()\n"
+    # 2) any left click (global mouse; Perform mode included)
+    mouse = _try_create(base, "mouseinCHOP", "mouse", -400, -560)
+    if mouse is not None:
+        ce = _create(base, "chopexecuteDAT", "clickpunch", -200, -560)
+        _setpar(ce, "chop", mouse)
+        _setpar(ce, "valuechange", True)
+        _setpar(ce, "active", True)
+        ce.text = code + (
+            "def onValueChange(channel, sampleIndex, val, prev):\n"
+            "    if 'lbutton' in channel.name and val > 0.5 and prev <= 0.5 \\\n"
+            "            and int(me.parent().par.Clickpunch.eval()):\n"
+            "        punch()\n"
+        )
+    # 3) the space bar
+    kb = _try_create(base, "keyboardinDAT", "keys", -400, -660)
+    if kb is not None:
+        _setpar_any(kb, ("keys",), "space", quiet=True)
+        _setpar(kb, "active", True)
+        kb.text = code + (
+            "def onKey(dat, key, character, alt, lAlt, rAlt, ctrl, lCtrl, rCtrl,\n"
+            "          shift, lShift, rShift, state, time, cmd, lCmd, rCmd):\n"
+            "    if state and int(me.parent().par.Clickpunch.eval()):\n"
+            "        punch()\n"
+        )
+
+
+def _scene_health(outs):
+    """One line per scene in the build report: the mean brightness and lit
+    fraction of its 'out' after a few frames. Black (0.000) or white (~1.0)
+    scenes are the two failure modes that hide behind a clean error walk."""
+    try:
+        import numpy as _np
+    except Exception:
+        return
+    for out in outs:
+        try:
+            for _ in range(3):
+                out.cook(force=True)
+            arr = out.numpyArray()
+            rgb = arr[..., :3]
+            mean = float(_np.nanmean(rgb))
+            lit = float((rgb.max(axis=2) > 0.05).mean())
+            flag = "  <-- BLACK" if mean < 0.002 else ("  <-- WHITE" if mean > 0.9 else "")
+            print(f"[td_build] health {out.parent().name:9s} mean {mean:.3f} lit {lit:.2f}{flag}")
+        except Exception as e:
+            print(f"[td_build] health {out.path}: unreadable ({e})")
+
+
 def _reactive_bindings(base, reactor, tempo):
     """Bind a tasteful set of *non-APC* scene params to the audio so the show
     evolves on its own. (APC faders own Trail/Orbit/Pointsize/Crossfade, so we
@@ -1489,15 +1698,18 @@ def _reactive_bindings(base, reactor, tempo):
     bind("flow/sim", "Speed", f"1.4*(1.0 + 0.9*{rex['level']})")
     bind("flow/sim", "Evolve", f"0.10 + 0.30*{rex['bass']}")
     bind("softbody/sim", "Spin", f"1.0 + 1.5*{rex['mid']}")
+    bind("pops/sim", "Speed", f"2.6*(1.0 + 0.8*{rex['level']})")
+    bind("pops/sim", "Evolve", f"0.22 + 0.4*{rex['bass']}")
 
 
 # ---------------------------------------------------------------------------
 # Professional lighting + a compiled glow material
 # ---------------------------------------------------------------------------
-def _light_rig(container, reactor=None, x=-200, y=300):
+def _light_rig(container, reactor=None, x=-200, y=300, shadows=False):
     """A 3-point rig: warm key, cool fill, bright rim -- the lighting that
     makes 3D read as 'pro'. Rim intensity pulses with the beat if a Reactor is
-    given. Returns a list of Light COMPs to hand to a Render TOP."""
+    given; ``shadows`` asks the key for a soft shadow map. Returns a list of
+    Light COMPs to hand to a Render TOP."""
     rex = _react_exprs(reactor)
     def light(name, pos, rgb, dy):
         L = _create(container, "lightCOMP", name, x, y - dy)
@@ -1509,6 +1721,9 @@ def _light_rig(container, reactor=None, x=-200, y=300):
         return L
 
     key = light("key", (6.0, 7.0, 6.0), (1.0, 0.85, 0.65), 0)
+    if shadows:
+        _setpar_any(key, ("shadowtype",), "soft", quiet=True)
+        _setpar_any(key, ("shadowquality",), "high", quiet=True)
     fill = light("fill", (-7.0, 2.0, 4.0), (0.4, 0.6, 1.0), 120)
     _setpar(fill, "dimmer", 0.5)
     rim = light("rim", (0.0, 4.0, -8.0), (0.9, 0.95, 1.0), 240)
@@ -1517,16 +1732,20 @@ def _light_rig(container, reactor=None, x=-200, y=300):
     return [key, fill, rim]
 
 
+USE_GLSL_MAT = False   # glow_mat.vert/.pixel fail to compile on 2025.3 (error
+                       # material = red/blue checker); the soft MAT is the look
+                       # until the shader is fixed against that build's log.
+
+
 def _glow_mat(container, reactor=None, name="glow_mat", x=-200, y=-180):
-    """Compiled GLSL MAT: emissive core + Fresnel rim, audio-reactive. Looks
-    expensive, costs little, and blooms through the scene glow pass. Falls back
-    to a Constant MAT (showing the instance colours) if glslMAT is unavailable."""
+    """Compiled GLSL MAT: emissive core + Fresnel rim, audio-reactive. Opt-in
+    (USE_GLSL_MAT); otherwise the additive soft MAT, which needs no shader."""
+    if not USE_GLSL_MAT:
+        return _soft_mat(container, name, x, y)
     rex = _react_exprs(reactor)
     mat = _try_create(container, "glslMAT", name, x, y)
     if mat is None:
-        mat = _create(container, "constantMAT", name, x, y)
-        _setpar(mat, "applypointcolor", True)
-        return mat
+        return _soft_mat(container, name, x, y)
     # GLSL MAT shader DAT parameters are vdat/pdat (the GLSL TOP's is pixeldat).
     _setpar_any(mat, ("vdat", "vertexdat"),
                 _shader_dat(container, name + "_vert", "glow_mat.vert", x, y - 130, prepend_common=False))
@@ -1539,7 +1758,7 @@ def _glow_mat(container, reactor=None, name="glow_mat", x=-200, y=-180):
 # ---------------------------------------------------------------------------
 # POPs: GPU particles in huge, organic, physics-driven numbers
 # ---------------------------------------------------------------------------
-def build_pops(dest=None, name="pops", palette="acid", count=200000):
+def build_pops(dest=None, name="pops", palette="acid", count=200000, use_pops=False):
     """A GPU particle storm built with TouchDesigner's POP family (the new
     GPU-resident 3D operators). Particles are emitted from a sphere, driven by
     a radial force + curl-style noise so they swirl in organic, physical ways,
@@ -1563,8 +1782,9 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         except Exception:
             pass
 
-    # --- Attempt the real POP network -------------------------------------
-    emitter = _try_create(geo, "spherePOP", "emitter")
+    # --- Attempt the real POP network (opt-in: its parameters are still
+    # being learned from build reports, and a wrong one is a checkered ball)
+    emitter = _try_create(geo, "spherePOP", "emitter") if use_pops else None
     particle = _try_create(geo, "particlePOP", "sim") if emitter is not None else None
 
     if emitter is not None and particle is not None:
@@ -1611,14 +1831,18 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         # (set above), the same as SOPs; no parameter names it.
         built_pops = True
     else:
-        # --- Fallback: proven curl-noise flow at a high particle count -----
-        print("[td_build] POPs unavailable -- falling back to curl-noise flow.")
-        sim = _create(geo, "scriptCHOP", "sim", -460, 0)
+        # --- The storm: the curl-noise engine, dense, fast and fine-grained,
+        # rendered as an additive cloud (a different animal from the Flow scene:
+        # twice the particles, a third the point size, faster, stronger trails).
+        sim = _create(c, "scriptCHOP", "sim", -560, 0)
         _install_callbacks(sim, "particles_chop.py")
         _setpar(sim, "Mode", "flow")
         _setpar(sim, "Palette", palette)
-        _setpar(sim, "Count", min(int(count), 120000))
-        _setpar(sim, "Pointsize", 0.012)
+        _setpar(sim, "Count", min(int(count), 40000))
+        _setpar(sim, "Pointsize", 0.011)
+        _setpar(sim, "Speed", 2.6)
+        _setpar(sim, "Scale", 0.32)
+        _setpar(sim, "Evolve", 0.22)
         sph = geo.create("sphereSOP", "shape")
         _setpar(sph, "type", "poly"); _setpar(sph, "rows", 4); _setpar(sph, "cols", 6)
         try:
@@ -1628,25 +1852,22 @@ def build_pops(dest=None, name="pops", palette="acid", count=200000):
         _instance_channels(geo, sim)
         built_pops = False
 
-    # Compiled glow material + 3-point lighting (shared by both paths).
+    # Additive soft material + 3-point lighting (lights matter for the POP path;
+    # the additive constant ignores them).
     mat = _glow_mat(c, reactor)
     _setpar(geo, "material", mat)
     lights = _light_rig(c, reactor)
     _orbit(c, geo, default=5.0)
-    cam = _camera(c, dist=8.0)
-    r = _render(c, geo, cam, lights[0])
-    try:
-        r.par.lights = " ".join(l.name for l in lights)  # all three
-    except Exception:
-        pass
-    tr = _trails(c, r, amount=0.92)
-    out = _glow(c, tr, size=18.0, x=640)
+    cam = _camera(c, dist=8.0 if built_pops else 13.0)
+    r = _render(c, geo, cam, lights)
+    tr = _trails(c, r, amount=0.94)
+    out = _glow(c, tr, size=22.0, x=640, threshold=0.3)
     if built_pops:
         _ensure_active(c)      # no driver needed (GPU, time-dependent), but
     else:                      # build_all still binds Active to the decks
-        _cook_driver(c, geo.op("sim"))
-    print(f"[td_build] built POP particle storm -> {c.path} "
-          f"({'POPs' if built_pops else 'flow fallback'})")
+        _cook_driver(c, c.op("sim"))
+    print(f"[td_build] built particle storm -> {c.path} "
+          f"({'POPs' if built_pops else 'curl-noise engine, 40k additive points'})")
     return c
 
 
@@ -1671,33 +1892,18 @@ def build_bohmian(dest=None, name="hydrogen", palette="ice", count=20000):
     _install_callbacks(sim, "hydrogen_chop.py")
     _setpar(sim, "Palette", palette)
     _setpar(sim, "Count", count)
+    _setpar(sim, "Pointsize", 0.018)
 
-    geo = _create(c, "geometryCOMP", "geo", -260, 0)
-    for child in list(geo.children):
-        try:
-            child.destroy()
-        except Exception:
-            pass
-    sph = geo.create("sphereSOP", "shape")
-    _setpar(sph, "type", "poly"); _setpar(sph, "rows", 4); _setpar(sph, "cols", 6)
-    try:
-        sph.render = sph.display = True
-    except Exception:
-        pass
-    _instance_channels(geo, sim)
-
-    mat = _glow_mat(c, reactor)
-    _setpar(geo, "material", mat)
-    lights = _light_rig(c, reactor)
-    _orbit(c, geo, default=8.0)            # slow camera spin to read the 3D shape
+    # Tens of thousands of tiny additive points: each electron is a faint dot,
+    # where they crowd the glow adds up, the long trails draw the circulation
+    # as rings and the wide bloom softens it all -- a probability cloud, not a
+    # ball of marbles.
+    geo, _ = _instanced_geo(c, sim, "geo", (1.0, 1.0, 1.0), -260, 0, look="soft", rows=3, cols=5)
+    _orbit(c, geo, default=6.0)            # slow camera spin to read the 3D shape
     cam = _camera(c, dist=18.0, tilt=-10.0)
-    r = _render(c, geo, cam, lights[0])
-    try:
-        r.par.lights = " ".join(l.name for l in lights)
-    except Exception:
-        pass
-    tr = _trails(c, r, amount=0.9)          # trails turn circulation into rings
-    out = _glow(c, tr, size=16.0, x=640)
+    r = _render(c, geo, cam, None)
+    tr = _trails(c, r, amount=0.94)         # trails turn circulation into rings
+    out = _glow(c, tr, size=26.0, x=640, threshold=0.25)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)

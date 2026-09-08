@@ -22,7 +22,8 @@
 #       107 = Freerun All toggle; lit while on.
 #   SCENE BUTTONS (round, right column, notes 112..119)
 #       112 = Reset the controller (re-handshake + repaint every LED).
-#       113 = Re-fire the live scene (new collision / next event / reset).
+#       113 = Re-fire the live scene (new collision / next event / reset;
+#             a PUNCH through the soft body, flow and storm).
 #       114.. = launch the scenes past the 8-wide grid (8, 9, 10 ...).
 #
 #   LEDs are sent by difference: repaint() remembers what each pad was last
@@ -50,8 +51,8 @@ except Exception:
 # Scene COMP names in build_all() order, and each scene's "re-fire" pulse.
 SCENE_NAMES = ["ising", "nbody", "flow", "softbody", "lhc", "opendata",
                "rd", "sdf", "pops", "hydrogen", "feynman"]
-REFIRE_PULSE = ["Reset", "Reset", "Reset", "Reset", "Newevent", "Nextevent",
-                "Reseed", "Reseed", "Reset", "Reset", "Reseed"]
+REFIRE_PULSE = ["Reset", "Reset", "Punch", "Punch", "Newevent", "Nextevent",
+                "Reseed", "Reseed", "Punch", "Reset", "Reseed"]
 N_SCENES = len(SCENE_NAMES)
 N_PAL = len(_PALETTES)
 N_GRID_COLS = 8  # the APC grid is 8 wide; scenes 8+ live on scene buttons

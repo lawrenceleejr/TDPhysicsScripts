@@ -43,6 +43,11 @@ void main() {
     }
 
     vec2 s = stateAt(uv);
+    // A feedback loop that once holds a NaN holds it forever and the whole
+    // frame goes white through the blur; uninitialised float textures can
+    // start that way. Any non-finite state resets to the resting chemistry.
+    if (any(isnan(s)) || any(isinf(s))) s = vec2(1.0, 0.0);
+    s = clamp(s, 0.0, 1.0);
     // 9-point Laplacian (weighted) for U and V.
     vec2 lap = vec2(0.0);
     lap += stateAt(uv + texel * vec2(-1.0,  0.0)) * 0.2;
@@ -54,8 +59,15 @@ void main() {
     lap += stateAt(uv + texel * vec2(-1.0,  1.0)) * 0.05;
     lap += stateAt(uv + texel * vec2( 1.0,  1.0)) * 0.05;
     lap -= s;
+    if (any(isnan(lap)) || any(isinf(lap))) lap = vec2(0.0);
 
     float u = s.x, v = s.y;
+    // Sparse sparks, a few pixels a frame, more on a beat: the pattern can
+    // never die out into the dead (u=1, v=0) state, whatever the seed did,
+    // and a drop re-ignites it.
+    float spark = step(0.99985 - 0.0008 * uBeat,
+                       hash21(uv * uRes * 0.37 + fract(uTime * 7.31) * 113.0));
+    v = max(v, spark * 0.85);
     float Du = 0.16, Dv = 0.08;
 
     // Audio drives the feed/kill window -- this is what makes it "breathe".

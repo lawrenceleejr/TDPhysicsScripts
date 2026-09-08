@@ -24,8 +24,8 @@ mechanic:
   * Every line gets an arrival distance out of that, and a frame lights the
     lines whose arrival falls inside ``(head - tail, head]``: part-grown at
     the head, fading at the tail.
-  * A line grows on the poster's curve, ``1 - (1 - t) ** 5.5`` — fast out of
-    the vertex, then a long crawl.
+  * A line grows over several of its own lengths of front travel (``grow_len``)
+    on an ease-in curve, so it creeps out of its vertex rather than popping.
   * Walkers run out of phase, spread over the whole cycle rather than over one
     traverse, so one is always mid-life while another re-seeds and the field
     neither empties nor fills up and sits.
@@ -155,14 +155,19 @@ class Flood:
       fade      how much of the tail is spent fading out rather than held lit
       walkers   how many fronts travel at once. More of them fill in the
                 troughs a short tail leaves between one front and the next.
+      grow_len  how far the front travels, in multiples of a line's own length,
+                while that line grows to full: the creep. 2 pops lines out;
+                6-10 lets each one be watched drawing itself.
     """
 
-    def __init__(self, field: Field, walkers: int = 3, traverse: float = 30.0,
-                 tail: float = 0.3, fade: float = 0.5, seed: int | None = None):
+    def __init__(self, field: Field, walkers: int = 3, traverse: float = 45.0,
+                 tail: float = 0.4, fade: float = 0.5, grow_len: float = 6.0,
+                 seed: int | None = None):
         self.f = field
         self.traverse = float(traverse)
         self.tail = float(tail)
         self.fade = float(fade)
+        self.grow_len = float(grow_len)
         self.rng = random.Random(seed)
 
         n = field.n_edges
@@ -263,8 +268,11 @@ class Flood:
             if not live.any():
                 continue
             behind = (w.head - w.arrive[live]).astype(np.float32)
-            lin = np.minimum(1.0, behind / (f.elen[live] * 2.2))
-            grow = np.maximum(0.02, 1.0 - np.power(1.0 - lin, 5.5))
+            lin = np.minimum(1.0, behind / (f.elen[live] * max(0.1, self.grow_len)))
+            # Ease-in, then steady: the tip leaves the vertex gently and creeps
+            # along at a near-constant pace (smoothstep's early, slow half then
+            # its linear middle) instead of shooting out and stalling.
+            grow = np.maximum(0.02, lin * lin * (3.0 - 2.0 * lin))
             age = behind / tail                      # 0 at the head, 1 at the tail
             tone = np.where(age > 1.0 - fade,
                             np.maximum(0.0, (1.0 - age) / fade), 1.0)
