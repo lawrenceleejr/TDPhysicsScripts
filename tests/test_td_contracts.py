@@ -787,3 +787,52 @@ def test_scenes_end_in_an_out_top_and_wires_are_verified():
     assert 'reactor.op("wave_tex"), ov' not in overlay
     connect = src[src.index("def _connect("):src.index("def _install_callbacks(")]
     assert "dst.inputs" in connect and "did not take" in connect
+
+
+# --- the 3D scenes are lit dramatically and finished by the cinema pass -----
+def test_3d_scenes_use_pbr_under_a_dramatic_rig_and_the_cinema_pass():
+    """Every rasterised 3D scene goes through _cinematic (ambient occlusion,
+    depth of field, haze) and the lit ones use the PBR material under the
+    low-key rig with an environment light; each is guarded so a missing OP
+    type or a failed shader degrades to the raw render, never to black."""
+    src = _src("touchdesigner", "td_build.py")
+    for builder, nxt in (("build_nbody", "build_particles"), ("build_particles", "dest_reactor"),
+                         ("build_lhc", "_cd_channel_names"), ("build_opendata", "build_apc")):
+        body = src[src.index("def %s(" % builder):src.index("def %s(" % nxt)]
+        assert "_cinematic(" in body, builder
+        assert "_trails(c, cine" in body, builder          # trails/bloom come after it
+    # the lit instanced look is PBR (falls back to Phong), lit by the rig + env
+    geo = src[src.index("def _instanced_geo("):src.index("def _line_geo(")]
+    assert "_pbr_mat(" in geo and "_lit_mat(" not in geo
+    pbr = src[src.index("def _pbr_mat("):src.index("def _studio_env(")]
+    assert '"pbrMAT"' in pbr and "return _lit_mat(" in pbr
+    for pn in ("basecolorr", "metallic", "roughness"):
+        assert '"%s"' % pn in pbr, pn
+    rig = src[src.index("def _light_rig("):src.index("USE_GLSL_MAT = False")]
+    assert '"shadowtype",), "soft"' in rig and "_studio_env(" in rig
+    assert "practical" in rig and "absTime.seconds" in rig     # the travelling accent
+    env = src[src.index("def _studio_env("):src.index("def _floor(")]
+    assert '"environmentlightCOMP"' in env and '"envlightmap"' in env and "studio_env.frag" in env
+    # the cinema pass: Depth TOP -> GLSL, Switch-gated by a Cinema toggle
+    cine = src[src.index("def _cinematic("):src.index("# ---------------------------------------------------------------------------\n# Reusable visual building blocks")]
+    assert '"depthTOP"' in cine and "cinema.frag" in cine
+    assert '"switchTOP"' in cine and "Cinema.eval()" in cine
+    assert "return render" in cine                             # no Depth TOP -> raw render
+    for u in ("uCam", "uCine", "uFog"):
+        assert '"%s"' % u in cine, u
+    # cameras carry tight planes so normalized depth is usable
+    assert "CAM_NEAR, CAM_FAR = 0.5, 200.0" in src
+    cam = src[src.index("def _camera("):src.index("def _light(")]
+    assert '"near", CAM_NEAR' in cam and '"far", CAM_FAR' in cam
+
+
+def test_cinema_and_env_shaders_declare_the_uniforms_the_builder_binds():
+    cine = _src("touchdesigner", "shaders", "cinema.frag")
+    for u in ("uCam", "uCine", "uFog"):
+        assert "uniform vec4 %s;" % u in cine, u
+    assert "sTD2DInputs[1]" in cine                            # reads the depth input
+    assert "uLinear" in cine and "uNear" in cine and "uFar" in cine   # linearises if needed
+    env = _src("touchdesigner", "shaders", "studio_env.frag")
+    assert "uniform vec4 uEnv;" in env
+    assert "softbox(" in env
+

@@ -11,9 +11,9 @@ Eleven scenes, spanning physics — half pure-numpy sims, half compiled-GLSL/GPU
 | # | Scene | What it is |
 |---|-------|-----------|
 | 0 | **Ising** | A 2D Ising model evolving near its critical temperature — breathing magnetic domains with glowing domain walls. |
-| 1 | **N-Body** | Gravitational N-body: colliding galaxies, a rotating disk, or a star cluster. Smooth Phong-lit spheres under a three-point rig with a soft shadow, coloured by speed. |
-| 2 | **Flow** | Divergence-free **curl-noise** turbulence — tens of thousands of lit particles swirling like smoke. **Punch** it for an outward blast. |
-| 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly. **Punch** it and a shock wave barrels through. |
+| 1 | **N-Body** | Gravitational N-body: colliding galaxies, a rotating disk, or a star cluster. PBR spheres under a low-key rig and a studio environment light, with a soft shadow, contact occlusion and depth of field, coloured by speed. |
+| 2 | **Flow** | Divergence-free **curl-noise** turbulence — tens of thousands of lit particles swirling like smoke, sinking into haze with depth. **Punch** it for an outward blast. |
+| 3 | **Soft Body** | A shape-matched **soft body** that rotates and wobbles like jelly on a dark glossy stage, its shadow landing beneath it. **Punch** it and a shock wave barrels through. |
 | 4 | **LHC Tracks** | Synthetic collider events: charged tracks spiralling in a magnetic field, colour-coded by momentum, re-firing every few seconds. |
 | 5 | **Open Data** | **Real CMS dimuon open data** — each event drawn as two muon tracks, coloured by invariant mass (you're literally rendering the J/ψ, Υ and Z). |
 | 6 | **React-Diff** | GPU **Gray-Scott reaction-diffusion** (feedback GLSL TOP) — organic spots/stripes/mitosis that bloom and dissolve with the music. |
@@ -252,6 +252,20 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
 
 ## GPU, shaders & POPs
 
+- **Lit like a render, not a viewport.** Every rasterised 3D scene (N-Body,
+  Flow, Soft Body, LHC, Open Data) is finished by a **cinema pass**
+  (`cinema.frag`): screen-space **ambient occlusion** where bodies meet,
+  thin-lens **depth of field** about a `Focus` plane, and a cold atmospheric
+  **haze** with distance. The lit scenes use a **PBR material** under a
+  **low-key rig** — a strong warm key with a soft shadow, a fill kept cold and
+  dim, a hard rim that pulses with the beat, a coloured practical that slowly
+  circles the scene — plus an **Environment Light** fed by a procedural HDR
+  studio (`studio_env.frag`: a big warm softbox, a cool strip light behind, a
+  faint floor bounce) so glossy bodies reflect real-looking softbox highlights.
+  The soft body sits on a dark glossy stage that catches the shadow. Each scene
+  has `Cinema`, `Focus`, `Depth of Field` and `Haze` on its VJ page; `Cinema`
+  off leaves the raw render, so a shader that fails to compile on a new build
+  can never black out a scene.
 - **Compiled GLSL everywhere it counts.** Reaction-diffusion, the raymarched
   SDF, the waveform overlay and the master **post-FX** chain (beat punch,
   chromatic aberration, optional kaleidoscope, scanline shimmer, vignette) are
