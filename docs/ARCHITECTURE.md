@@ -191,17 +191,34 @@ per-frame: all behaviour lives in `callbacks/apc_mini.py` as plain functions,
 and three small operators call into it:
 
 * a **MIDI In DAT** (`midiin`) whose `onReceiveMIDI` forwards every message to
-  `apc_mini.on_midi(apc, message, channel, index, value)`. Notes 0–63 cut a
-  scene + palette (`note = row*8 + col`); the round buttons arm deck B, commit
-  the crossfade, toggle freerun, reset and re-fire; CCs 48–56 are the faders.
-* a **MIDI Out CHOP** (`ledout`). `sendMIDI('note', channel, note, velocity)`
+  `apc_mini.on_midi(apc, message, channel, index, value)`. Grid notes 0–63
+  (`note = row*8 + col`) are decoded into one of four quadrants by
+  `_decode`: `('scene', i)` lower-left, `('palette', i)` / `('tool', name)`
+  lower-right, `('action', name)` upper-left, `('fx', name)` upper-right. The
+  round buttons map to the same action names (`TRACK_ACTIONS`,
+  `SCENE_ACTIONS`); CCs 48–55 are faders (`FADER_MAP`, per live scene), 56 the
+  crossfade; note 122 is Shift. Note-offs matter: actions in `MOMENTARY`
+  (Trail+, Strobe, Title) undo on release, and Title distinguishes a tap
+  (stays `TITLE_TAP_SECONDS`) from a hold.
+* everything funnels through **`apc_mini.perform(show, action, apc, pressed)`**
+  — the one place an action is defined. The show's own pulses, the click DAT
+  and the keyboard DAT can call it too, so a "Punch" from the mouse and from
+  the pad are literally the same code path.
+* a **MIDI Out CHOP** (`ledout`). `sendNoteOn(channel, note, velocity)`
   lights a pad: `velocity` is the APC's 128-colour index and the **channel
   selects the behaviour** (ch 1–7 = 10 %→100 % solid, 8–11 = pulse, 12–16 =
   blink). `apc_mini.repaint` redraws the whole surface from the show's `Scene`,
-  `Nextscene`, `Crossfade`, `Freerunall` and each scene's `Palette`.
+  `Nextscene`, `Crossfade`, `Freerunall`, `Freeze`, `Blackout`, the sixteen
+  FX toggles, the Reactor's `Mute` and each scene's `Palette`; quadrants have
+  their own colours (white/yellow actions, purple/green FX, cyan/red tools).
 * two **Parameter Execute DATs**: `statewatch` repaints when the show changes
   (so mouse and MIDI stay in sync), and `selfwatch` catches the surface's own
   `Reset` pulse and `Device` changes.
+
+The title overlay is storage-driven: `perform('title')` writes `title_t0` /
+`title_toff` onto the PhysicsVJ COMP, and `_title_overlay` in the builder binds
+the ink shader's bleed/fade and the gating Switch to `parent().fetch(...)` of
+those two numbers, so no per-frame Python runs for it.
 
 LEDs are sent **by difference**: `repaint` remembers what every pad was last
 told (per surface, in `_LED_STATE`) and only re-sends pads whose state changed,
@@ -212,11 +229,12 @@ recovery path for a controller that powered on dark, was hot-plugged, or
 drifted out of sync. `build_all(apc=True)` (the default) wires this in pointing
 at the show.
 
-The track buttons are checked transport-first (`Cut`, `Freerun`) and only then
-as arm buttons for scenes 0–5; `tests/test_td_contracts.py` drives the whole
-control map against a stub of the TD API, because the one bug this surface has
-had (Cut and Freerun arming scenes 6 and 7 once the grid grew to eight
-columns) was exactly the kind a static parse cannot see.
+`tests/test_td_contracts.py` drives the whole control map against a stub of
+the TD API — every quadrant, Shift, momentary release, tap tempo, the title
+timing and the fader map — because the one bug this surface has had (Cut and
+Freerun arming scenes once the grid grew to eight columns) was exactly the kind
+a static parse cannot see. It also pins `FX_NAMES` to the builder's copy and
+the shader's `uFxA..uFxD` order.
 
 The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
 palette→colour map) are constants at the top of `apc_mini.py` — re-map the

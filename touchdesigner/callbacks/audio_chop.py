@@ -1,8 +1,18 @@
 # Script CHOP callback -- turn the DJ's audio into reactive control channels.
 #
 # Input 0 = an audio CHOP (mono or stereo; the live feed). Outputs one sample
-# per channel:  bass, mid, high, level, beat, bpm.  Scenes, shaders and the
-# post-FX bind their uniforms/params to these (e.g. op('Reactor/analyze')['bass']).
+# per channel:
+#   bass mid high level  smoothed bands, auto-levelled to 0..1 (Auto on)
+#   beat                 a flash on each kick, exponential decay (~0.25 s)
+#   kick                 onset strength of the last kick (0 between kicks)
+#   pulse                smooth 0..1 pulsation peaking on each predicted beat
+#   bpm                  the tracked tempo
+# Scenes, shaders and the post-FX bind to these (op('Reactor/analyze')['bass']).
+#
+# Auto levels: with 'Auto' on (default) every band is normalised by its own
+# slow-decaying peak, so a quiet feed and a hot one look the same and nothing
+# has to be trimmed before a set. 'Reset Levels' forgets the history; 'Hit' is a
+# manual beat; 'Mute' zeroes everything (the show stops reacting).
 #
 # The heavy lifting lives in physics/audio.py (numpy, unit-tested); this file is
 # the thin TD adapter, advanced once per frame like every other sim here.
@@ -15,10 +25,11 @@ if _REPO and _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
 import numpy as np
-from physics.audio import AudioAnalyzer, BeatTracker
+from physics.audio import AudioAnalyzer, AutoLevel, KickTracker
 
 _STATE = {}
-_CHANNELS = ["bass", "mid", "high", "level", "beat", "bpm"]
+_CHANNELS = ["bass", "mid", "high", "level", "beat", "kick", "pulse", "bpm"]
+_BANDS = ["bass", "mid", "high", "level"]
 
 
 def _state(scriptOp):
@@ -96,13 +107,23 @@ def onSetupParameters(scriptOp):
     g.val = 6.0
     scriptOp.par.Gain.normMin, scriptOp.par.Gain.normMax = 0.5, 20.0
     s = page.appendFloat("Beatsens", label="Beat Sensitivity")[0]
-    s.val = 1.5
+    s.val = 1.6
     scriptOp.par.Beatsens.normMin, scriptOp.par.Beatsens.normMax = 1.05, 3.0
-    page.appendFloat("Beathold", label="Beat Hold (s)")[0].val = 0.18
+    page.appendFloat("Beathold", label="Beat Hold (s)")[0].val = 0.22
+    page.appendToggle("Auto", label="Auto Levels")[0].val = True
+    page.appendToggle("Mute", label="Mute (stop reacting)")[0].val = False
+    page.appendPulse("Resetlevels", label="Reset Levels")
+    page.appendPulse("Hit", label="Hit (manual beat)")
 
 
 def onPulse(par):
-    pass
+    st = _state(par.owner)
+    if par.name == "Resetlevels":
+        for key in ("agc", "kick"):
+            if key in st:
+                st[key].reset()
+    elif par.name == "Hit" and "kick" in st:
+        st["kick"].hit()
 
 
 def _samples(scriptOp):
@@ -134,31 +155,44 @@ def onCook(scriptOp):
     if analyzer is None:
         analyzer = AudioAnalyzer(sample_rate=sr)
         st["analyzer"] = analyzer
-        st["beat"] = BeatTracker()
-        st["flash"] = 0.0
+        st["agc"] = AutoLevel(_BANDS + ["low"])
+        st["kick"] = KickTracker()
     analyzer.sr = sr
     analyzer.attack = float(_p(scriptOp, "Attack", 0.7))
     analyzer.release = float(_p(scriptOp, "Release", 0.12))
     analyzer.gain = float(_p(scriptOp, "Gain", 6.0))
-    bt = st["beat"]
-    bt.sensitivity = float(_p(scriptOp, "Beatsens", 1.5))
-    bt.refractory = float(_p(scriptOp, "Beathold", 0.18))
+    kt = st["kick"]
+    kt.sensitivity = float(_p(scriptOp, "Beatsens", 1.6))
+    kt.refractory = float(_p(scriptOp, "Beathold", 0.22))
+    auto = bool(_p(scriptOp, "Auto", True))
+    mute = bool(_p(scriptOp, "Mute", False))
 
     x = _samples(scriptOp)
     feats = analyzer.analyze(x)
 
     frame = absTime.frame  # noqa: F821 (TD global)
     dt = 1.0 / _fps(scriptOp)
+    agc = st["agc"]
     if st.get("last_frame") != frame:
-        is_beat = bt.update(feats["bass"], dt)
-        st["flash"] = 1.0 if is_beat else max(0.0, st.get("flash", 0.0) - dt * 6.0)
+        # Auto-levelled bands; the kick detector runs on the auto-levelled raw
+        # low band so it sees the same-sized kicks whatever the input gain.
+        bands = {}
+        for name in _BANDS:
+            v = float(feats[name])
+            bands[name] = min(agc.normalize(name, v, dt), 1.0) if auto else min(v, 1.0)
+        low = agc.normalize("low", float(feats.get("low_raw", 0.0)), dt)
+        kt.update(low if auto else min(float(feats.get("low_raw", 0.0)) * analyzer.gain, 1.5), dt)
+        st["bands"] = bands
         st["last_frame"] = frame
+    bands = st.get("bands", {n: 0.0 for n in _BANDS})
 
     vals = {
-        "bass": feats["bass"], "mid": feats["mid"], "high": feats["high"],
-        "level": feats["level"], "beat": st.get("flash", 0.0),
-        "bpm": bt.bpm if bt.bpm > 0 else 0.0,
+        "bass": bands["bass"], "mid": bands["mid"], "high": bands["high"],
+        "level": bands["level"], "beat": kt.envelope, "kick": kt.strength,
+        "pulse": kt.pulse(), "bpm": kt.bpm,
     }
+    if mute:
+        vals = {k: (kt.bpm if k == "bpm" else 0.0) for k in vals}
     _emit(scriptOp, vals)
 
 
