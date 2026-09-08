@@ -440,6 +440,18 @@ def _floor(container, name="floor", x=-260, y=-260, size=60.0, height=-3.2):
     return geo
 
 
+def _mean_of(top, frames=3):
+    """The mean brightness of a TOP now, or None if it cannot be read."""
+    try:
+        import numpy as _np
+        for _ in range(frames):
+            top.cook(force=True)
+        arr = top.numpyArray()
+        return float(_np.nanmean(arr[..., :3]))
+    except Exception:
+        return None
+
+
 def _ensure_visible(container, geo, out, what, x=-260, y=-260):
     """Cook the finished scene once; if it comes out black, swap ``geo``'s
     material for the lit PBR one and say so. The additive soft MAT rendered
@@ -516,6 +528,19 @@ def _cinematic(container, render, cam, focus, name="cine", x=380, y=200,
     _connect(cine, gate, 1)
     _expr(gate, "index", "1 if parent().par.Cinema.eval() else 0")
     _set_res(gate)
+
+    # Prove the pass earns its place: blurring and occluding a sparse scene can
+    # cost it most of its light, and a dim scene in a set is a dead slot. If the
+    # pass loses more than a third of the frame's brightness (or blacks it out),
+    # the toggle starts off -- the controls stay for a manual look.
+    raw, done = _mean_of(render), _mean_of(cine)
+    if raw is not None and done is not None:
+        if done < 0.002 or (raw > 0.002 and done < raw * 0.65):
+            _setpar(container, "Cinema", False)
+            print(f"[td_build] {container.name}: cinema pass dimmed the frame "
+                  f"({raw:.3f} -> {done:.3f}); Cinema defaults off")
+        else:
+            print(f"[td_build] {container.name}: cinema pass on ({raw:.3f} -> {done:.3f})")
     return gate
 
 
@@ -614,6 +639,11 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     bright = _create(container, "levelTOP", name + "_bright", x, y - 280)
     _connect(src, bright)
     _setpar(bright, "blacklevel", threshold)   # clamp dim pixels to black
+    # Raising the black point of a floating-point input maps anything below it
+    # BELOW zero, and a negative feeds straight through the add composite (the
+    # RD scene reported a mean of -1.000). Clamp the range here.
+    _setpar_any(bright, ("clamp", "clamplow"), True, quiet=True)
+    _setpar_any(bright, ("blackclamp",), True, quiet=True)
 
     blur = _create(container, "blurTOP", name + "_blur", x, y - 150)
     _connect(bright, blur)
@@ -851,11 +881,12 @@ def build_lhc(dest=None, name="lhc"):
     _line_geo(c, sim, "geo", -260, 0)
     _orbit(c, geo, default=9.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
+    # Line art gets no cinema pass: ambient occlusion and a lens blur spread a
+    # one-pixel track over nine and darken it to nothing (this scene measured
+    # exactly black with the pass in). Depth here comes from the tracks' own
+    # colour and the bloom.
     r = _render(c, geo, cam, None)
-    # Tracks are unlit lines, but depth of field and haze still give the
-    # detector volume its depth: near tracks crisp, far ones sink into haze.
-    cine = _cinematic(c, r, cam, focus=12.0, dof=0.5, ao=0.35, haze=0.45)
-    tr = _trails(c, cine, amount=0.0)
+    tr = _trails(c, r, amount=0.0)
     out = _glow(c, tr, size=12.0, x=640)
     _cook_driver(c, sim)
     try:
@@ -1000,9 +1031,8 @@ def build_opendata(dest=None, name="opendata"):
     _line_geo(c, sim, "geo", -260, 0)
     _orbit(c, geo, default=6.0)
     cam = _camera(c, dist=12.0, tilt=-8.0)
-    r = _render(c, geo, cam, None)
-    cine = _cinematic(c, r, cam, focus=12.0, dof=0.5, ao=0.35, haze=0.45)
-    tr = _trails(c, cine, amount=0.0)
+    r = _render(c, geo, cam, None)      # line art: no cinema pass (see build_lhc)
+    tr = _trails(c, r, amount=0.0)
     scene = _glow(c, tr, size=10.0, name="scene", x=640)
     out = _mass_hud(c, scene)
     _cook_driver(c, sim)
@@ -1704,6 +1734,11 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     color = _create(c, "glslTOP", "rd_color", 20, 0)
     _connect(state, color, 0)
     _set_res(color)        # colourise at output size; the state is sampled by uv
+    # Pin the colour stage to 8-bit. A GLSL TOP inherits its input's format, so
+    # this one came out 32-bit float like the chemistry it reads -- and a float
+    # frame has nothing clamping it, so the bloom's black point mapped a black
+    # pixel to exactly -1.0 (the scene reported a mean of -1.000).
+    _setpar_any(color, ("format",), "rgba8fixed")
     _setpar(color, "pixeldat", _shader_dat(c, "rd_color_src", "rd_color.frag", 20, 150))
     _glsl_uniforms(color, [
         ("uTime", "absTime.seconds"), ("uLevel", rex["level"]),
@@ -1711,7 +1746,7 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
         ("uPalette", "parent().par.Palette.menuIndex"),
     ])
 
-    out = _glow(c, color, size=8.0, x=240)
+    out = _glow(c, color, size=8.0, x=240, threshold=0.25)
     _cook_driver(c, state)  # keep the feedback advancing while the scene is live
     try:
         c.par.Reseed.pulse()  # seed the pattern now
@@ -1995,25 +2030,87 @@ def _punch_controls(base):
 
 
 def _scene_health(outs):
-    """One line per scene in the build report: the mean brightness and lit
-    fraction of its 'out' after a few frames. Black (0.000) or white (~1.0)
-    scenes are the two failure modes that hide behind a clean error walk."""
+    """One line per scene: what its 'out' actually holds after a few frames.
+
+    Black (0.000), white (~1.0) and negative or NaN pixels are the failure
+    modes that hide behind a clean error walk, so the range is printed, not
+    just the mean. A scene that comes out black is also *repaired* where the
+    builder can: the cinema pass is switched off, and failing that the
+    geometry's material is swapped for the other family (an additive cloud
+    that renders black becomes lit, a PBR body with no environment light to
+    reflect becomes Phong). Every step says what it did and what it measured.
+    """
     try:
         import numpy as _np
     except Exception:
         return
+
+    def stats(out):
+        for _ in range(3):
+            out.cook(force=True)
+        arr = out.numpyArray()
+        rgb = arr[..., :3]
+        return (float(_np.nanmean(rgb)), float(_np.nanmin(rgb)), float(_np.nanmax(rgb)),
+                float(_np.isnan(rgb).mean()), float((rgb.max(axis=2) > 0.05).mean()))
+
     for out in outs:
+        scene = out.parent()
         try:
-            for _ in range(3):
-                out.cook(force=True)
-            arr = out.numpyArray()
-            rgb = arr[..., :3]
-            mean = float(_np.nanmean(rgb))
-            lit = float((rgb.max(axis=2) > 0.05).mean())
-            flag = "  <-- BLACK" if mean < 0.002 else ("  <-- WHITE" if mean > 0.9 else "")
-            print(f"[td_build] health {out.parent().name:9s} mean {mean:.3f} lit {lit:.2f}{flag}")
+            mean, lo, hi, nan, lit = stats(out)
         except Exception as e:
             print(f"[td_build] health {out.path}: unreadable ({e})")
+            continue
+        note = ""
+        if mean < 0.002 or nan > 0.01 or lo < -0.001:
+            # Remedy 1: the depth-aware pass, which can darken a sparse scene.
+            if hasattr(scene.par, "Cinema") and int(scene.par.Cinema.eval()):
+                _setpar(scene, "Cinema", False)
+                try:
+                    mean2, lo, hi, nan, lit = stats(out)
+                    note += f"  cinema off -> {mean2:.3f}"
+                    mean = mean2
+                except Exception:
+                    pass
+            # Remedy 2: the other material family.
+            if mean < 0.002:
+                geo = scene.op("geo")
+                if geo is not None and hasattr(geo.par, "material"):
+                    swapped = _swap_material(scene, geo)
+                    if swapped:
+                        try:
+                            mean3, lo, hi, nan, lit = stats(out)
+                            note += f"  {swapped} -> {mean3:.3f}"
+                            mean = mean3
+                        except Exception:
+                            pass
+        flag = "  <-- BLACK" if mean < 0.002 else ("  <-- WHITE" if mean > 0.9 else "")
+        if nan > 0.01:
+            flag += f"  <-- {nan * 100:.0f}% NaN"
+        if lo < -0.001:
+            flag += f"  <-- NEGATIVE (min {lo:.3f})"
+        print(f"[td_build] health {scene.name:9s} mean {mean:.3f} lit {lit:.2f} "
+              f"range [{lo:.3f}, {hi:.3f}]{flag}{note}")
+
+
+def _swap_material(scene, geo, x=-260, y=-320):
+    """Give ``geo`` the other kind of material and say which. An additive
+    cloud that renders black becomes a lit PBR body; a PBR body with nothing
+    to reflect becomes Phong, which needs no environment light."""
+    try:
+        current = geo.par.material.eval()
+        kind = current.OPType if current is not None else ""
+    except Exception:
+        kind = ""
+    try:
+        if "pbr" in str(kind).lower():
+            _setpar(geo, "material", _lit_mat(scene, "phong_fallback_mat", x, y))
+            return "phong material"
+        _setpar(geo, "material", _pbr_mat(scene, "lit_fallback_mat", x, y,
+                                          metallic=0.0, roughness=0.55))
+        return "lit material"
+    except Exception as e:
+        print(f"[td_build] {scene.name}: material swap failed: {e}")
+        return None
 
 
 def _reactive_bindings(base, reactor, tempo):
@@ -2066,12 +2163,12 @@ def _light_rig(container, reactor=None, x=-200, y=300, shadows=False, env=True):
         _setpar_any(L, ("attenuationend",), 60.0, quiet=True)
         return L
 
-    key = light("key", (9.0, 11.0, 5.0), (1.0, 0.82, 0.6), 0, dimmer=2.2)
+    key = light("key", (9.0, 11.0, 5.0), (1.0, 0.82, 0.6), 0, dimmer=3.0)
     if shadows:
         _setpar_any(key, ("shadowtype",), "soft")
         _setpar_any(key, ("shadowquality",), "high", quiet=True)
         _setpar_any(key, ("shadowsoftness",), 3.0, quiet=True)
-    fill = light("fill", (-9.0, 1.0, 6.0), (0.3, 0.45, 0.9), 120, dimmer=0.25)
+    fill = light("fill", (-9.0, 1.0, 6.0), (0.3, 0.45, 0.9), 120, dimmer=0.45)
     rim = light("rim", (-2.0, 5.0, -10.0), (0.7, 0.85, 1.0), 240, dimmer=1.8)
     if reactor is not None:
         _bindexpr(rim, "dimmer", f"1.8 + 1.2*{rex['beat']}")
