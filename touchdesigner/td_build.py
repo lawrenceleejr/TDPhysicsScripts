@@ -1316,7 +1316,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _report_master_chain(switch_a, switch_b, cross, final, len(outs))
 
     # Make the whole show breathe: bind scene params to the audio + tempo.
-    _reactive_bindings(base, reactor, tempo)
+    _safe("reactive bindings", _reactive_bindings, base, reactor, tempo)
     try:
         base.store("scene_names", scene_names)
         base.store("scene_titles", [SCENE_TITLES.get(n, n.upper()) for n in scene_names])
@@ -1324,8 +1324,8 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         base.store("title_toff", -1e9)
     except Exception:
         pass
-    _punch_controls(base)
-    _scene_health(outs)
+    _safe("punch / title controls", _punch_controls, base)
+    _safe("scene health", _scene_health, outs)
 
     print(f"[td_build] built PhysicsVJ with {len(outs)} scenes -> {base.path}")
     print("[td_build] View 'out' in Perform mode. Cut with 'Scene'; blend with "
@@ -1339,6 +1339,17 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
             print(f"[td_build] APC surface skipped: {e}")
 
     return base
+
+
+def _safe(what, fn, *args):
+    """Run a non-essential build step; a failure is one report line, never a
+    dead show (a Keyboard In DAT refusing its text once aborted build_all
+    after every scene had been built)."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        print(f"[td_build] {what} skipped: {type(e).__name__}: {e}")
+        return None
 
 
 def _scene_feed(base, out):
@@ -1909,11 +1920,16 @@ def _punch_controls(base):
             "        punch()\n"
         )
     # 3) the space bar
+    # A Keyboard In DAT is an *input* DAT: its text is the key log and is not
+    # editable ("The operator is not editable" aborted a whole build). Like the
+    # MIDI In DAT, its script lives in a Text DAT named by 'callbacks'.
     kb = _try_create(base, "keyboardinDAT", "keys", -400, -660)
     if kb is not None:
         _setpar_any(kb, ("keys",), "space t", quiet=True)
         _setpar(kb, "active", True)
-        kb.text = code + (
+        kb_cb = _create(base, "textDAT", "keys_callbacks", -400, -760)
+        _setpar(kb, "callbacks", kb_cb)
+        kb_cb.text = code + (
             "def onKey(dat, key, character, alt, lAlt, rAlt, ctrl, lCtrl, rCtrl,\n"
             "          shift, lShift, rShift, state, time, cmd, lCmd, rCmd):\n"
             "    if not state:\n"

@@ -836,3 +836,19 @@ def test_cinema_and_env_shaders_declare_the_uniforms_the_builder_binds():
     assert "uniform vec4 uEnv;" in env
     assert "softbox(" in env
 
+
+def test_input_dats_get_their_scripts_through_callbacks_not_text():
+    """Keyboard In and MIDI In DATs are input DATs: their text is the event
+    log and is read-only ("The operator is not editable" aborted a whole
+    build). Their scripts must go in a Text DAT named by 'callbacks', and
+    the non-essential control extras must be guarded in build_all."""
+    src = _src("touchdesigner", "td_build.py")
+    assert not re.search(r"\bkb\.text\s*=", src)
+    assert not re.search(r"\bmidiin\.text\s*=", src)
+    assert '_setpar(kb, "callbacks", kb_cb)' in src
+    assert '_setpar(midiin, "callbacks", in_cb)' in src
+    build_all = src[src.index("def build_all("):src.index("# =====")]
+    assert '_safe("punch / title controls", _punch_controls, base)' in build_all
+    assert '_safe("reactive bindings", _reactive_bindings' in build_all
+    assert '_safe("scene health", _scene_health, outs)' in build_all
+
