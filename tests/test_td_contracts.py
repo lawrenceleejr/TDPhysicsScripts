@@ -794,16 +794,20 @@ def test_scenes_end_in_an_out_top_and_wires_are_verified():
 
 # --- the 3D scenes are lit dramatically and finished by the cinema pass -----
 def test_3d_scenes_use_pbr_under_a_dramatic_rig_and_the_cinema_pass():
-    """Every rasterised 3D scene goes through _cinematic (ambient occlusion,
-    depth of field, haze) and the lit ones use the PBR material under the
-    low-key rig with an environment light; each is guarded so a missing OP
-    type or a failed shader degrades to the raw render, never to black."""
+    """The lit 3D scenes go through _cinematic (ambient occlusion, depth of
+    field, haze) on the PBR material under the low-key rig with an environment
+    light; the line-art scenes do not, because a lens blur and occlusion erase
+    a one-pixel track (LHC measured exactly black with the pass in). Each step
+    is guarded so a missing OP type or a failed shader degrades to the raw
+    render, never to black."""
     src = _src("touchdesigner", "td_build.py")
-    for builder, nxt in (("build_nbody", "build_particles"), ("build_particles", "dest_reactor"),
-                         ("build_lhc", "_cd_channel_names"), ("build_opendata", "build_apc")):
+    for builder, nxt in (("build_nbody", "build_particles"), ("build_particles", "dest_reactor")):
         body = src[src.index("def %s(" % builder):src.index("def %s(" % nxt)]
         assert "_cinematic(" in body, builder
         assert "_trails(c, cine" in body, builder          # trails/bloom come after it
+    for builder, nxt in (("build_lhc", "_cd_channel_names"), ("build_opendata", "build_apc")):
+        body = src[src.index("def %s(" % builder):src.index("def %s(" % nxt)]
+        assert "_cinematic(" not in body, builder
     # the lit instanced look is PBR (falls back to Phong), lit by the rig + env
     geo = src[src.index("def _instanced_geo("):src.index("def _line_geo(")]
     assert "_pbr_mat(" in geo and "_lit_mat(" not in geo
@@ -894,4 +898,26 @@ def test_palette_pads_glow_in_the_palettes_own_colour():
     # the map draws its palette dots from the same representative colour
     map_src = _src("tools", "apc_map.py")
     assert 'ns["palette_rgb"](name)' in map_src and "PAL_HEX" not in map_src
+
+
+def test_every_risky_pass_measures_itself_and_the_health_check_repairs():
+    """A pass that can cost a scene its light has to prove it did not: the
+    cinema pass compares the frame with and without itself and starts off if
+    it dimmed it, and the health check reports the pixel range (black, white,
+    NaN and negative all look alike in a mean) and repairs a black scene by
+    switching the pass off and swapping the material family."""
+    src = _src("touchdesigner", "td_build.py")
+    cine = src[src.index("def _cinematic("):src.index("# ---------------------------------------------------------------------------\n# Reusable visual building blocks")]
+    assert "_mean_of(render), _mean_of(cine)" in cine
+    assert 'Cinema", False' in cine and "raw * 0.65" in cine
+    health = src[src.index("def _scene_health("):src.index("def _swap_material(")]
+    for probe in ("nanmin", "nanmax", "isnan"):
+        assert probe in health, probe
+    assert "NEGATIVE" in health and "NaN" in health
+    assert 'Cinema", False' in health and "_swap_material(" in health
+    swap = src[src.index("def _swap_material("):src.index("def _reactive_bindings(")]
+    assert "_lit_mat(" in swap and "_pbr_mat(" in swap          # both directions
+    # the bloom's black-point stage cannot push negatives into the composite
+    glow = src[src.index("def _glow("):src.index("def _trails(")]
+    assert '"blacklevel", threshold' in glow and "clamp" in glow
 
