@@ -47,7 +47,11 @@ def onSetupParameters(scriptOp):
     o.val = "random"
     # Earlier events stay on screen, dimming with age, so the frame reads as
     # a detector event display rather than two lines at a time.
-    page.appendInt("History", label="Events Kept")[0].val = 10
+    u = page.appendInt("Underlying", label="Underlying Tracks")[0]
+    u.val = 90
+    scriptOp.par.Underlying.normMin, scriptOp.par.Underlying.normMax = 0, 250
+    scriptOp.par.Underlying.clampMin = True
+    page.appendInt("History", label="Events Kept")[0].val = 3
     scriptOp.par.History.normMin, scriptOp.par.History.normMax = 0, 40
     scriptOp.par.History.clampMin = True
     menu = page.appendMenu("Palette", label="Palette")[0]
@@ -95,12 +99,15 @@ def _build(scriptOp, layers, scale):
                 continue
             poly = scriptOp.appendPoly(m, closed=False, addPoints=True)
             base = tr.color
+            # The measured pair brightens toward its tip; the debris stays flat
+            # and dim, so the eye goes to the muons in a hundred-track event.
+            tip = 0.6 if tr.pid == "muon" else 0.15
             for i in range(m):
                 vtx = poly[i]
                 vtx.point.x = float(pts[i, 0] * scale)
                 vtx.point.y = float(pts[i, 1] * scale)
                 vtx.point.z = float(pts[i, 2] * scale)
-                b = dim * (0.4 + 0.6 * (i / (m - 1)))
+                b = dim * ((1.0 - tip) + tip * (i / (m - 1)))
                 vtx.point.Cd = (float(base[0] * b), float(base[1] * b), float(base[2] * b))
 
 
@@ -112,13 +119,15 @@ def onCook(scriptOp):
     order = _p(scriptOp, "Order", "random")
     pal = _p(scriptOp, "Palette", "ice")
 
-    keep = max(0, int(_p(scriptOp, "History", 10)))
+    keep = max(0, int(_p(scriptOp, "History", 3)))
 
+    under = max(0, int(_p(scriptOp, "Underlying", 90)))
     show = st.get("show")
-    if show is None or st.get("order") != order or st.get("pal") != pal:
-        show = DimuonShow(palette=pal, order=order)
+    if (show is None or st.get("order") != order or st.get("pal") != pal
+            or st.get("under") != under):
+        show = DimuonShow(palette=pal, order=order, underlying=under)
         st.update(show=show, t0=absTime.seconds, order=order, pal=pal,
-                  last_built=None, history=[])
+                  under=under, last_built=None, history=[])
 
     now = absTime.seconds
     if now - st["t0"] >= period:

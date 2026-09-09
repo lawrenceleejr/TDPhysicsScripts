@@ -734,9 +734,12 @@ def test_every_explicit_resolution_sets_custom_mode():
     """resolutionw/h are ignored unless Output Resolution is 'custom'; the
     Render TOP sat at 256x256 and the show came out square and blocky."""
     src = _src("touchdesigner", "td_build.py")
-    # resolutionw/h are set in exactly one place, _set_res, right after the mode.
+    # resolutionw/h are written in exactly one place, _set_res, and only after
+    # the mode that makes them count -- including the scaled (expression) form.
     assert src.count('"resolutionw"') == 1 and src.count('"resolutionh"') == 1
     assert src.index('"outputresolution", "custom"') < src.index('"resolutionw"')
+    setres = src[src.index("def _set_res("):src.index("def _chan_names(")]
+    assert '"resolutionw"' in setres and "scale_expr" in setres
     assert src.count("_set_res(") >= 14                 # render, glow, trails, HUD, GLSL, post
     # every Feedback TOP has a source on its input (an unwired one is 256x256)
     trails = src[src.index("def _trails("):src.index("def _mass_hud(")]
