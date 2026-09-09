@@ -144,6 +144,25 @@ td_build.build_particles(op('/'), mode='softbody')
 
 ---
 
+## Type
+
+The show is set in three bundled Google Fonts (`assets/get_fonts.py` fetches
+them from the `google/fonts` repository with their licences — the CSS API is no
+use here, it serves subsetted dynamic fonts whose bytes are not even
+TrueType, and TouchDesigner's Text TOP wants a real `.ttf`):
+
+| Face | Job |
+|---|---|
+| **Archivo Black** | the big ink titles — a heavy grotesque that holds at 210 px |
+| **Archivo** | labels and UI, the same superfamily so it pairs by construction |
+| **JetBrains Mono** | instrument readouts, where digits have to line up |
+
+`td_build._font()` sets a Text TOP from the bundled file and falls back to the
+installed family name, reporting if neither took. The LHC readout uses neither:
+it is drawn as strokes (`physics/vecfont.py`) so it stays crisp at any zoom.
+
+---
+
 ## The controls
 
 Every scene exposes a custom parameter page. Highlights:
@@ -301,6 +320,18 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
   chromatic aberration, optional kaleidoscope, scanline shimmer, vignette) are
   all GLSL TOPs. Shader source lives in `touchdesigner/shaders/` — readable,
   hot-swappable `.frag`/`.vert` files, not buried in nodes.
+- **The film stock** (`grunge.frag`, `Stock` page on `PhysicsVJ`) — one grade
+  over the whole show, after the performer's FX and before the title, so every
+  scene is made of the same thing and a title is printed on the same stock as
+  the picture. Crushed contrast, cold shadows against warm highlights,
+  **halation** bleeding warm around anything hot, **grain** weighted into the
+  mids where film actually has it, **dust and scratches**, a **gate weave** so
+  the frame is never perfectly registered, and a **`Chaos`** dial that takes
+  the frame apart — bands slipping sideways, channels tearing, a wide roll
+  walking down the picture, all of it biting hardest on the beat. `Chaos
+  Burst` throws it for a moment and decays; **Big Punch on the APC fires it**,
+  so the hit and the picture come apart together. `Film Stock` off leaves the
+  clean mix.
 - **`Look` page** on `PhysicsVJ`: `Kaleido`, `RGB Shift`, `Beat Punch`,
   **`Dark Mode`** (on by default: crushed blacks, a heavier mid gamma, a
   tighter vignette and `Exposure` 0.85, so every scene reads as dark-mode UI
@@ -402,6 +433,17 @@ repaints the full state in one shot — your safety net mid-set. Changing the
 `Device` id re-routes MIDI and resyncs automatically. In normal use LEDs are
 sent *by difference* (only pads whose state changed), so riding a fader costs
 a couple of MIDI messages a frame rather than ninety.
+
+---
+
+## Resolution
+
+The show runs at **1920×1080** end to end — every scene's `out`, every Render
+TOP, every pass. The one exception is the raymarch, which renders at `Render
+Scale` (0.6 by default) and is fitted back up before its bloom: a raymarch
+stutters because of what it costs, not how it moves, and its forms are soft and
+bloomed anyway, so the resolution buys back the frame rate that reads as
+smoothness. Turn it to 1 on a big GPU.
 
 ---
 

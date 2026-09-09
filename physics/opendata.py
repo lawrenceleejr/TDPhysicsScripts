@@ -229,7 +229,9 @@ class DimuonShow:
         n_points: int = 64,
         order: str = "mass",
         seed: int | None = None,
+        underlying: int = 90,
     ):
+        self.underlying = int(underlying)
         self.data = load_dimuon(path)
         self.n_events = len(self.data["M"])
         if self.n_events == 0:  # never divide by zero in show_event()
@@ -255,19 +257,65 @@ class DimuonShow:
         self.show_event(0)
 
     def _build(self, ev: int) -> list[Track]:
+        """The event: the two measured muons, plus the rest of the collision.
+
+        A real dimuon event is not two lines in an empty detector -- the pair
+        sits inside the hadronic debris of the same proton-proton collision.
+        The dataset records only the muons, so the underlying event is
+        simulated around them: soft charged tracks from the same vertex, drawn
+        dim and short, with the muons bright and full length on top. Seeded
+        from the event number, so an event looks the same every time it comes
+        round.
+        """
         d = self.data
         vertex = np.array([0.0, 0.0, 0.0])
         M = float(d["M"][ev])
         # Anchor colour on a log mass scale so J/psi..Z spread across the ramp.
         c01 = normalize(np.log10(max(M, 0.3)), np.log10(0.5), np.log10(120.0))
         col = colorize(c01, self.palette).reshape(3)
-        tracks = []
+
+        tracks = list(self._underlying_event(ev, vertex))
         for tag in ("1", "2"):
             mom = (d["px" + tag][ev], d["py" + tag][ev], d["pz" + tag][ev])
             q = d["Q" + tag][ev]
             pts = helix_track(vertex, mom, q, self.B, self.max_length, self.n_points)
             tracks.append(Track(pts, col, np.hypot(mom[0], mom[1]), int(q), "muon"))
         return tracks
+
+    def _underlying_event(self, ev: int, vertex) -> list[Track]:
+        """Soft charged tracks from the same vertex: the rest of the collision.
+
+        Momenta follow the shapes a minimum-bias event actually has -- an
+        exponential pT spectrum around 0.6 GeV, flat in azimuth, Gaussian in
+        pseudorapidity -- so the spray thins out the way a detector display
+        does rather than looking like noise. Low momentum means tight curvature
+        in the field, which is what gives the picture its spiral.
+        """
+        n = self.underlying
+        if n <= 0:
+            return []
+        rng = np.random.default_rng(1000 + int(ev))
+        pt = rng.exponential(0.6, n) + 0.12
+        eta = rng.normal(0.0, 1.6, n)
+        phi = rng.uniform(0.0, 2.0 * np.pi, n)
+        charge = rng.choice((-1, 1), n)
+        theta = 2.0 * np.arctan(np.exp(-eta))
+        out = []
+        for i in range(n):
+            px = pt[i] * np.cos(phi[i])
+            py = pt[i] * np.sin(phi[i])
+            pz = pt[i] / max(np.tan(theta[i]), 1e-3)
+            # A soft track is drawn short: it curls up long before the muons do.
+            length = float(np.clip(self.max_length * (0.25 + 0.5 * pt[i]),
+                                   0.8, self.max_length))
+            pts = helix_track(vertex, (px, py, pz), int(charge[i]), self.B,
+                              length, max(12, self.n_points // 2))
+            # Cool and dim, so they read as context and never fight the pair.
+            shade = 0.10 + 0.16 * float(np.clip(pt[i] / 2.0, 0.0, 1.0))
+            out.append(Track(pts, np.array([shade * 0.55, shade * 0.85, shade],
+                                           dtype=np.float32),
+                             float(pt[i]), int(charge[i]), "hadron"))
+        return out
 
     def show_event(self, i: int) -> None:
         self.index = int(i) % self.n_events
@@ -279,9 +327,17 @@ class DimuonShow:
         self.show_event(self.index + 1)
 
     def grow(self, frac: float) -> list[Track]:
+        """The event part-drawn. The underlying tracks lead the muons slightly,
+        so the debris is already there when the pair sweeps out through it."""
         frac = float(np.clip(frac, 0.0, 1.0))
         out = []
         for tr in self.tracks:
-            m = max(2, int(round(frac * len(tr.points))))
+            f = min(1.0, frac * 1.35) if tr.pid == "hadron" else frac
+            m = max(2, int(round(f * len(tr.points))))
             out.append(Track(tr.points[:m], tr.color, tr.pt, tr.charge, tr.pid))
         return out
+
+    @property
+    def muons(self) -> list[Track]:
+        """Just the measured pair -- what the invariant mass is computed from."""
+        return [t for t in self.tracks if t.pid == "muon"]

@@ -251,14 +251,18 @@ def test_synthetic_dimuon_shows_resonances():
     assert near_z > 5 * max(near_gap, 1)
 
 
-def test_dimuon_show_builds_two_tracks():
+def test_dimuon_show_builds_the_measured_pair():
+    """Every event carries the two muons the dataset actually recorded. The
+    rest of the tracks are the simulated underlying event (see
+    test_open_data_event_is_a_whole_collision_not_just_the_pair)."""
     show = DimuonShow(palette="ice")
-    assert len(show.tracks) == 2
+    assert len(show.muons) == 2
     show.next_event()
-    assert len(show.tracks) == 2
+    assert len(show.muons) == 2
     assert show.current_mass > 0
     grown = show.grow(0.3)
-    assert len(grown) == 2
+    assert len(grown) == len(show.tracks)
+    assert len([t for t in grown if t.pid == "muon"]) == 2
 
 
 def test_opendata_empty_csv_falls_back(tmp_path):
@@ -269,7 +273,7 @@ def test_opendata_empty_csv_falls_back(tmp_path):
     d = load_dimuon(str(p))
     assert len(d["M"]) > 0
     show = DimuonShow(path=str(p))
-    assert show.n_events > 0 and len(show.tracks) == 2
+    assert show.n_events > 0 and len(show.muons) == 2
 
 
 def test_ising_low_temperature_no_overflow():
@@ -564,3 +568,33 @@ def test_hud_handles_an_empty_event():
     from physics import hud
     polys, kinds = hud.leaders(np.zeros((0, 3), dtype=np.float32), [])
     assert polys == [] and kinds == []
+
+
+def test_open_data_event_is_a_whole_collision_not_just_the_pair():
+    """The dataset records two muons; a real event has the rest of the
+    collision around them. The underlying tracks are simulated from the event
+    number (so an event looks the same every time), soft, short and dim, with
+    the measured pair bright and full length on top."""
+    from physics.opendata import DimuonShow
+    show = DimuonShow(underlying=80, order="sequential")
+    assert len(show.tracks) == 82 and len(show.muons) == 2
+    hadrons = [t for t in show.tracks if t.pid == "hadron"]
+    assert len(hadrons) == 80
+    # soft: the debris carries far less momentum than the muons, and is shorter
+    assert max(t.pt for t in hadrons) < max(m.pt for m in show.muons)
+    assert np.mean([len(t.points) for t in hadrons]) < len(show.muons[0].points)
+    # dim: nothing in the spray is as bright as the pair
+    assert max(float(t.color.max()) for t in hadrons) < float(show.muons[0].color.max())
+    # both charges occur, so the spray curls both ways in the field
+    assert {t.charge for t in hadrons} == {-1, 1}
+    # deterministic per event, and different between events
+    again = DimuonShow(underlying=80, order="sequential")
+    assert np.allclose(show.tracks[0].points, again.tracks[0].points)
+    show.next_event()
+    assert not np.allclose(show.tracks[0].points, again.tracks[0].points)
+    # the debris leads the pair as the event draws in
+    part = DimuonShow(underlying=20, order="sequential").grow(0.5)
+    lead = [len(t.points) for t in part if t.pid == "hadron"]
+    assert lead and min(lead) >= 2
+    # switching it off leaves exactly the measured pair
+    assert len(DimuonShow(underlying=0).tracks) == 2

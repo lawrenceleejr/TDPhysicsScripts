@@ -289,16 +289,25 @@ def _custom_page(comp, name):
     return comp.appendCustomPage(name)
 
 
-MASTER_RES = (1280, 720)   # the show's output size; every scene's 'out' is this
+MASTER_RES = (1920, 1080)  # the show's output size; every scene's 'out' is this
 
 
-def _set_res(top, w=MASTER_RES[0], h=MASTER_RES[1]):
+def _set_res(top, w=MASTER_RES[0], h=MASTER_RES[1], scale_expr=None):
     """Give a TOP an explicit size. resolutionw/h only apply once the TOP's
     Output Resolution mode is 'custom' -- without that the Render TOP sat at
-    its 256x256 default and the whole show came out square and blocky."""
+    its 256x256 default and the whole show came out square and blocky.
+
+    ``scale_expr`` makes the size an expression instead: the given fraction of
+    (w, h), for a stage that renders below master size and is upscaled after.
+    Every write of these two parameters goes through here, so none can happen
+    without the mode that makes it count.
+    """
     _setpar(top, "outputresolution", "custom")
-    _setpar(top, "resolutionw", w)
-    _setpar(top, "resolutionh", h)
+    for pn, val in (("resolutionw", w), ("resolutionh", h)):
+        if scale_expr:
+            _bindexpr(top, pn, "int(%d * (%s))" % (val, scale_expr))
+        else:
+            _setpar(top, pn, val)
 
 
 def _chan_names(chop, n, base="c"):
@@ -392,6 +401,12 @@ def _pbr_mat(container, name="pbr_mat", x=-200, y=-180, metallic=0.15, roughness
     _setpar_any(mat, ("metallic",), metallic)
     _setpar_any(mat, ("roughness",), roughness)
     _setpar_any(mat, ("specularlevel",), 0.6, quiet=True)
+    # A path tracer's giveaway is that a surface keeps a little light where
+    # nothing points at it: the environment does that here, and a shade of
+    # ambient occlusion keeps the crevices honest.
+    _setpar_any(mat, ("ambientocclusionmap", "occlusionmap"), None, quiet=True)
+    _setpar_any(mat, ("envlightmapstrength", "environmentstrength"), 1.0, quiet=True)
+    _setpar_any(mat, ("shadowstrength",), 0.9, quiet=True)
     return mat
 
 
@@ -563,8 +578,10 @@ def _instanced_geo(container, chop, name, base_color, x, y, look="lit", rows=8, 
             pass
     sph = geo.create("sphereSOP", "shape")
     _setpar(sph, "type", "poly")
-    _setpar(sph, "rows", rows)
-    _setpar(sph, "cols", cols)
+    # A faceted sphere is the single loudest "real-time" tell, and at 1080p the
+    # facets are plain. These counts are cheap next to the instancing.
+    _setpar(sph, "rows", max(int(rows), 12))
+    _setpar(sph, "cols", max(int(cols), 18))
     try:
         sph.render = True
         sph.display = True
@@ -591,6 +608,43 @@ def _line_geo(container, sop, name, x, y):
     return mat
 
 
+# The show's type: two families and a mono, each with one job. The files are
+# bundled (assets/get_fonts.py fetches them from google/fonts), so the look
+# does not depend on what happens to be installed on the machine.
+FONT_DIR = os.path.join(REPO, "assets", "fonts")
+FONTS = {
+    "display": ("ArchivoBlack-Regular.ttf", "Archivo Black"),
+    "ui": ("Archivo-Variable.ttf", "Archivo"),
+    "mono": ("JetBrainsMono-Variable.ttf", "JetBrains Mono"),
+}
+
+
+def _font(top, role="ui", quiet=False):
+    """Set a Text TOP's typeface to one of the show's fonts.
+
+    A Text TOP takes either a font *file* or the name of an installed family,
+    and which parameter carries which varies by build, so try the file first
+    (nothing to install) and fall back to the family name. Returns what took,
+    or None -- in which case the report says so and the TOP keeps its default.
+    """
+    fname, family = FONTS.get(role, FONTS["ui"])
+    path = os.path.join(FONT_DIR, fname)
+    if os.path.isfile(path):
+        for pn in ("fontfile", "file"):
+            if _setpar_any(top, (pn,), path, quiet=True) is not None:
+                return path
+        # Some builds accept a path in the font menu itself.
+        if _setpar_any(top, ("font",), path, quiet=True) is not None:
+            return path
+    elif not quiet:
+        print(f"[td_build] font file missing ({path}); run assets/get_fonts.py")
+    got = _setpar_any(top, ("font",), family, quiet=True)
+    if got is None and not quiet:
+        print(f"[td_build] {top.path}: could not set the {role} font "
+              f"(tried the file and the family '{family}')")
+    return family if got else None
+
+
 CAM_NEAR, CAM_FAR = 0.5, 200.0    # tight planes: usable depth for the cinema pass
 
 
@@ -612,7 +666,8 @@ def _light(container, name="light", x=-200, y=120):
     return light
 
 
-def _render(container, geo, cam, light, name="render", x=200, y=200, w=1280, h=720):
+def _render(container, geo, cam, light, name="render", x=200, y=200,
+            w=MASTER_RES[0], h=MASTER_RES[1]):
     """Render TOP. ``light`` may be one Light COMP, a list of them, or None."""
     r = _create(container, "renderTOP", name, x, y)
     _setpar(r, "camera", cam)
@@ -648,6 +703,12 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     blur = _create(container, "blurTOP", name + "_blur", x, y - 150)
     _connect(bright, blur)
     _setpar(blur, "size", size)
+    # A single-pass box blur has a hard shoulder that reads as a glow sticker.
+    # Several passes of a Gaussian approximate the wide, soft falloff a lens
+    # actually has, which is most of what separates bloom from haze.
+    _setpar_any(blur, ("filter",), "gaussian", quiet=True)
+    _setpar_any(blur, ("passes",), 3, quiet=True)
+    _set_res(blur)
 
     black = _create(container, "constantTOP", name + "_bg", x, y - 300)
     _setpar(black, "colorr", 0.0)
@@ -741,8 +802,9 @@ def _mass_hud(container, scene_top, x=1040, y=0):
     _set_res(title)
     _setpar(title, "text",
             "DIMUON INVARIANT MASS  [GeV]      peaks L>R:  J/psi   Upsilon   Z")
-    _setpar(title, "fontsizex", 26)
-    _setpar(title, "fontsizey", 26)
+    _font(title, "mono")
+    _setpar(title, "fontsizex", 30)
+    _setpar(title, "fontsizey", 30)
     _setpar(title, "alignx", "left")
     _setpar(title, "aligny", "top")
     _setpar(title, "fontcolorr", 0.85)
@@ -1231,7 +1293,7 @@ def _orbit(container, geo, default=8.0):
 # ---------------------------------------------------------------------------
 # Master build: every scene + a live switcher
 # ---------------------------------------------------------------------------
-def build_dashboard(dest=None, target=None, name="Dashboard", monitor=2):
+def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
     """An operator's view at the top level: the show as it goes out, beside the
     APC map.
 
@@ -1260,7 +1322,8 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=2):
     except Exception:
         pass
     page.appendToggle("Showmap", label="Show APC Map")[0].val = True
-    page.appendPulse("Openwindow", label="Open Program Window")
+    page.appendPulse("Openwindow", label="Open Program Window (full screen)")
+    page.appendPulse("Closewindow", label="Close Program Window")
 
     # The program feed, fetched across the COMP boundary with a Select TOP.
     prog = _create(c, "selectTOP", "program", -300, 0)
@@ -1271,24 +1334,38 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=2):
     win = _try_create(dest, "windowCOMP", "program_window", 200, -200)
     if win is not None:
         _setpar_any(win, ("opcomp", "operator", "top"), target_path + "/out")
-        _setpar_any(win, ("monitor", "whichmonitor", "displayindex"), monitor, quiet=True)
+        # Full screen on one display: 'monitor' sizing fills the chosen screen,
+        # so the show needs no width or height of its own. Names vary by build,
+        # hence the spellings; each logs if it misses.
+        _setpar_any(win, ("monitor", "whichmonitor", "displayindex"), monitor)
+        _setpar_any(win, ("winsizemode", "sizemode", "size"), "monitor", quiet=True)
+        _setpar_any(win, ("fullscreen",), True, quiet=True)
         _setpar_any(win, ("borders",), False, quiet=True)
+        _setpar_any(win, ("cursorvisible",), False, quiet=True)
+        _setpar_any(win, ("alwaysontop",), True, quiet=True)
+        # If this build sizes windows only by number, fill the display anyway.
         _setpar_any(win, ("winw", "width"), MASTER_RES[0], quiet=True)
         _setpar_any(win, ("winh", "height"), MASTER_RES[1], quiet=True)
+        _setpar_any(win, ("winoffsetx", "offsetx"), 0, quiet=True)
+        _setpar_any(win, ("winoffsety", "offsety"), 0, quiet=True)
         opener = _create(c, "parameterexecuteDAT", "opener", -300, -300)
         _setpar(opener, "op", c)
         _setpar(opener, "pars", "Openwindow")
         _setpar(opener, "onpulse", True)
         _setpar(opener, "active", True)
+        _setpar(opener, "pars", "Openwindow Closewindow")
         opener.text = (
             "def onPulse(par):\n"
             f"    w = op('{win.path}')\n"
-            "    for pn in ('winopen', 'open'):\n"
+            "    names = ('winopen', 'open') if par.name == 'Openwindow' \\\n"
+            "            else ('winclose', 'close')\n"
+            "    for pn in names:\n"
             "        try:\n"
             "            getattr(w.par, pn).pulse()\n"
             "            return\n"
             "        except Exception:\n"
             "            continue\n"
+            "    debug('[td] window has no', names, 'pulse')\n"
         )
 
     # The cheatsheet: the map, rasterised beside the SVG by tools/apc_map.py.
@@ -1323,7 +1400,9 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=2):
     label = _create(c, "textTOP", "labels", -100, -320)
     _set_res(label)
     _setpar_any(label, ("text",), "PROGRAM  >  DISPLAY %d" % monitor, quiet=True)
-    _setpar_any(label, ("fontsizex", "fontsize"), 22, quiet=True)
+    _font(label, "mono")
+    _setpar_any(label, ("fontsizex", "fontsize"), 26, quiet=True)
+    _setpar_any(label, ("fontsizey",), 26, quiet=True)
     _setpar_any(label, ("alignx",), "left", quiet=True)
     _setpar_any(label, ("aligny",), "top", quiet=True)
     _setpar_any(label, ("bgalpha",), 0.0, quiet=True)
@@ -1526,17 +1605,34 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _connect(mixed, bypass, 1)
     _expr(bypass, "index", "0 if parent().par.Fx.eval() else 1")
 
+    # The film stock: one grade, grain and dirt over the whole show, after the
+    # performer's FX and before the title (a title should be printed on the
+    # same stock as everything else, not laid on top of it clean).
+    stocked, stock = _grunge(base, bypass, reactor, tempo, x=700)
+
     # Ink-bleed scene title (TITLE button) over the show, then the blackout
-    # level; both sit after the Fx bypass so they work with post FX off too.
-    titled, ink = _title_overlay(base, bypass, scene_names, x=760)
-    master = _create(base, "levelTOP", "master_level", 920, 0)
+    # level; both sit after the stock so they work with post FX off too.
+    titled, ink = _title_overlay(base, stocked, scene_names, x=900)
+    master = _create(base, "levelTOP", "master_level", 1060, 0)
     _connect(titled, master)
     _expr(master, "opacity", "0 if parent().par.Blackout.eval() else 1")
     _set_res(master)
 
-    final = _create(base, "nullTOP", "out", 1080, 0)
+    # A rebuild used to leave the previous 'out' behind, so TD named the new
+    # one 'out1' and the COMP viewer kept showing the stale node. Clear any
+    # twin, then point the viewer at this one by name.
+    for stale in ("out1", "out2"):
+        old = base.op(stale)
+        if old is not None:
+            try:
+                old.destroy()
+            except Exception:
+                pass
+    final = _create(base, "nullTOP", "out", 1220, 0)
     _connect(master, final)
     _set_res(final)
+    if _setpar_any(base, ("opviewer",), "./out") is None:
+        print("[td_build] could not point the PhysicsVJ viewer at ./out")
     try:
         final.viewer = True
     except Exception:
@@ -1545,7 +1641,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     # Pull the master chain once now. Nothing else does during a headless
     # build, so without this a GLSL compile failure in post/overlay would
     # never reach build_report.txt -- it would just be a black 'out' later.
-    for o in (cross, mixed, post, final):
+    for o in (cross, mixed, post, stock, final):
         try:
             o.cook(force=True)
         except Exception as e:
@@ -1554,7 +1650,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         ink.cook(force=True)     # surface a title-shader compile error now
     except Exception as e:
         print(f"[td_build] cook of {ink.path} raised: {e}")
-    for o in (switch_a, switch_b, cross, mixed, post, bypass, ink, master, final):
+    for o in (switch_a, switch_b, cross, mixed, post, bypass, stock, ink, master, final):
         try:
             err = o.errors()
             if err:
@@ -1948,7 +2044,7 @@ def build_reaction_diffusion(dest=None, name="rd", palette_index=5):
     return c
 
 
-def build_raymarch(dest=None, name="sdf", palette_index=2):
+def build_raymarch(dest=None, name="sdf", palette_index=2, quality=0.6):
     """An audio-reactive raymarched SDF: morphing metaballs that twist to the
     bass and orbit on the bar (single compiled fragment shader)."""
     dest = dest or op("/")  # noqa: F821
@@ -1973,6 +2069,9 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
         c.par.Detail.normMin, c.par.Detail.normMax = 1, 4
         page.appendFloat("Morph", label="Morph")[0].val = 0.5
         c.par.Morph.normMin, c.par.Morph.normMax = 0.0, 1.0
+        q = page.appendFloat("Quality", label="Render Scale")[0]
+        q.val = quality
+        c.par.Quality.normMin, c.par.Quality.normMax = 0.3, 1.0
         page.appendPulse("Reseed", label="Next Form")
     # 'Next Form' steps the Shape menu.
     stepper = _create(c, "parameterexecuteDAT", "formstep", -120, 320)
@@ -1987,7 +2086,13 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
     )
 
     sdf = _create(c, "glslTOP", "sdf", -120, 0)
-    _set_res(sdf)
+    # A raymarch is the one scene whose smoothness is a frame-rate question,
+    # not a maths one: 110 marches plus soft shadows and occlusion per pixel
+    # at 1920x1080 is millions of steps a frame, and it stutters however clean
+    # the motion is. Render it below master size and let the upscale carry it;
+    # the forms are smooth and bloomed, so the softness does not read as low
+    # resolution the way an edge would. Render Scale trades it back.
+    _set_res(sdf, scale_expr="parent().par.Quality.eval()")
     _setpar(sdf, "pixeldat", _shader_dat(c, "sdf_src", "raymarch.frag", -120, 160))
     # Packed vec4 uniforms: four Vectors slots carry everything the shader
     # needs (each slot is a vec4; a float uniform would read only .x).
@@ -1998,7 +2103,16 @@ def build_raymarch(dest=None, name="sdf", palette_index=2):
                                   "parent().par.Twist", "parent().par.Zoom"))
     _glsl_vec4(sdf, 3, "uCtrl2", ("parent().par.Detail", "parent().par.Morph", 0.0, 0.0))
 
-    out = _glow(c, sdf, size=10.0, x=120)
+    # Back up to master size before the bloom, so the scene leaves at the show
+    # resolution like every other one.
+    up = _try_create(c, "fitTOP", "upscale", 20, 0)
+    if up is None or not _connect(sdf, up):
+        up = sdf
+    else:
+        _set_res(up)
+        _setpar_any(up, ("fit",), "fill", quiet=True)
+        _setpar_any(up, ("filter", "interpolate"), "gaussian", quiet=True)
+    out = _glow(c, up, size=10.0, x=120)
     _cook_driver(c, sdf)
     print(f"[td_build] built Raymarch SDF -> {c.path}")
     return c
@@ -2073,6 +2187,78 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     return post
 
 
+def _grunge(container, src, reactor, tempo, name="stock", x=700, y=0):
+    """The film stock: the grade, the grain, the dirt and the chaos dial.
+
+    Separate from _post_fx on purpose. That pass is the performer's effects --
+    things toggled for a bar and turned off. This one is what the show is made
+    of, and it stays on all night: crushed contrast, cold shadows against warm
+    highlights, halation around anything hot, grain in the mids, dust, a gate
+    that never quite registers, and one Chaos dial that takes the frame apart
+    on the beat. Switch-gated, so a shader that will not compile leaves the
+    clean mix rather than a black screen.
+    """
+    rex = _react_exprs(reactor)
+    page = _custom_page(container, "Stock")
+    if not hasattr(container.par, "Stock"):
+        page.appendToggle("Stock", label="Film Stock (grade / grain / dirt)")
+        _setpar(container, "Stock", True)
+        for pn, label, val, lo, hi in (
+            ("Grain", "Grain", 0.65, 0.0, 2.0),
+            ("Halation", "Halation", 0.55, 0.0, 2.0),
+            ("Dust", "Dust + Scratches", 0.5, 0.0, 2.0),
+            ("Weave", "Gate Weave", 0.6, 0.0, 2.0),
+            ("Contrast", "Contrast", 0.45, 0.0, 1.5),
+            ("Splittone", "Split Tone", 0.7, 0.0, 1.5),
+            ("Chaos", "Chaos", 0.0, 0.0, 1.0),
+        ):
+            page.appendFloat(pn, label=label)[0].val = val
+            try:
+                getattr(container.par, pn).normMin = lo
+                getattr(container.par, pn).normMax = hi
+            except Exception:
+                pass
+        page.appendPulse("Chaosburst", label="Chaos Burst")
+        page.appendFloat("Chaosdecay", label="Chaos Burst Decay (s)")[0].val = 0.7
+
+    # A burst is a timestamp in storage and an expression that decays from it:
+    # nothing per-frame in Python, and it cannot get stuck on.
+    burst = _create(container, "parameterexecuteDAT", name + "_burst", -200, -510)
+    _setpar(burst, "op", container)
+    _setpar(burst, "pars", "Chaosburst")
+    _setpar(burst, "onpulse", True)
+    _setpar(burst, "active", True)
+    burst.text = (
+        "def onPulse(par):\n"
+        "    par.owner.store('chaos_t0', absTime.seconds)\n"
+    )
+    try:
+        container.store("chaos_t0", -1e9)
+    except Exception:
+        pass
+
+    stock = _create(container, "glslTOP", name, x, y)
+    _setpar(stock, "pixeldat", _shader_dat(container, name + "_src", "grunge.frag", x, y - 170))
+    _connect(src, stock, 0)
+    _set_res(stock)
+    _glsl_vec4(stock, 0, "uGrain", ("parent().par.Grain", "parent().par.Halation",
+                                    "parent().par.Dust", "parent().par.Weave"))
+    # Chaos is the dial plus whatever is left of the last burst.
+    chaos_expr = ("min(1.0, parent().par.Chaos.eval() + max(0.0, 1.0 - "
+                  "(absTime.seconds - parent().fetch('chaos_t0', -1e9)) / "
+                  "max(parent().par.Chaosdecay.eval(), 1e-3)))")
+    _glsl_vec4(stock, 1, "uGrade", ("parent().par.Contrast", "parent().par.Splittone",
+                                    chaos_expr, "absTime.seconds"))
+    _glsl_vec4(stock, 2, "uAudio", (rex["level"], rex["beat"], rex["high"], rex["pulse"]))
+
+    gate = _create(container, "switchTOP", name + "_gate", x + 170, y)
+    _connect(src, gate, 0)          # Stock off: the clean mix, pass not cooked
+    _connect(stock, gate, 1)
+    _expr(gate, "index", "1 if parent().par.Stock.eval() else 0")
+    _set_res(gate)
+    return gate, stock
+
+
 def _title_overlay(container, src, scene_names, name="title", x=760, y=0):
     """The TITLE button: the live scene's physics title in big caps, soaked in
     like ink on wet paper, composited over ``src``. Returns (gated TOP, ink TOP).
@@ -2088,7 +2274,9 @@ def _title_overlay(container, src, scene_names, name="title", x=760, y=0):
     _expr(text, "text",
           "parent().fetch('scene_titles', [])[int(parent().par.Scene.menuIndex)] "
           "if int(parent().par.Scene.menuIndex) < len(parent().fetch('scene_titles', [])) else ''")
-    _setpar_any(text, ("fontsizex", "fontsize"), 150, quiet=True)
+    _font(text, "display")
+    _setpar_any(text, ("fontsizex", "fontsize"), 210, quiet=True)
+    _setpar_any(text, ("fontsizey",), 210, quiet=True)
     _setpar_any(text, ("bold",), True, quiet=True)
     _setpar_any(text, ("alignx",), "center", quiet=True)
     _setpar_any(text, ("aligny",), "center", quiet=True)
