@@ -866,18 +866,35 @@ def build_nbody(dest=None, name="nbody", palette="inferno"):
     _setpar(sim, "Palette", palette)
     # Smooth spheres (only ~600 of them), Phong-lit by the 3-point rig with a
     # soft shadow from the key: reads as solid bodies in a dark room.
+    # Only a few hundred bodies, so they can afford a genuinely round
+    # silhouette -- at 1080p a 14x20 sphere still shows its facets.
     geo, mat = _instanced_geo(c, sim, "geo", (1.0, 0.55, 0.15), -260, 0,
-                              look="lit", rows=14, cols=20)
+                              look="lit", rows=24, cols=36)
     # Nothing lights a body except the beam: no ambient term, no fill, no
     # environment. A body outside the pool of light is simply not there.
     for pn in ("ambr", "ambg", "ambb"):
         _setpar_any(mat, (pn,), 0.0, quiet=True)
-    _setpar_any(mat, ("roughness",), 0.45, quiet=True)
+    _setpar_any(mat, ("roughness",), 0.38, quiet=True)
+    _setpar_any(mat, ("metallic",), 0.05, quiet=True)
+
+    # A second pass of the same bodies, larger and additive: a luminous shell
+    # around each lit core. An opaque shaded sphere is the plastic look however
+    # good the material is -- a mass under a beam should also *emit*, and the
+    # halation in the film stock then does what a lens does with it. The shell
+    # ignores lights (constant MAT), so it reads through the dark side too.
+    halo, _ = _instanced_geo(c, sim, "halo", (1.0, 0.62, 0.28), -260, -220,
+                             look="soft", rows=10, cols=14)
+    _setpar_any(halo, ("scale",), 2.6, quiet=True)
     _orbit(c, geo, default=7.0)
+    _expr(halo, "ry", "op('geo').par.ry")      # the shell turns with the bodies
     cam = _camera(c, dist=26.0)
     lights = _spot_rig(c, dest_reactor(dest), cone=17.0, delta=30.0,
                        pos=(11.0, 13.0, 8.0), dimmer=14.0)
-    r = _render(c, geo, cam, lights)
+    # Bodies shadow each other in the beam: the cue that says "rendered".
+    for L in lights:
+        _setpar_any(L, ("shadowtype",), "soft", quiet=True)
+        _setpar_any(L, ("shadowquality",), "high", quiet=True)
+    r = _render(c, [geo, halo], cam, lights)
     cine = _cinematic(c, r, cam, focus=26.0, dof=0.45, ao=0.9, haze=0.3)
     tr = _trails(c, cine, amount=0.7)
     out = _glow(c, tr, size=18.0, x=640, threshold=0.35)
@@ -1293,6 +1310,17 @@ def _orbit(container, geo, default=8.0):
 # ---------------------------------------------------------------------------
 # Master build: every scene + a live switcher
 # ---------------------------------------------------------------------------
+def _map_size(default=(822, 966)):
+    """The APC map picture's size, from the JSON tools/apc_map.py writes."""
+    try:
+        import json
+        with open(os.path.join(REPO, "docs", "apc_map.json")) as fh:
+            geo = json.load(fh)
+        return int(geo["width"]), int(geo["height"])
+    except Exception:
+        return default
+
+
 def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
     """An operator's view at the top level: the show as it goes out, beside the
     APC map.
@@ -1368,12 +1396,29 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
             "    debug('[td] window has no', names, 'pulse')\n"
         )
 
-    # The cheatsheet: the map, rasterised beside the SVG by tools/apc_map.py.
+    # The cheatsheet: the map, rasterised beside the SVG by tools/apc_map.py,
+    # with the surface's real LED state painted over it. The overlay reads
+    # apc_mini's own send cache, so the panel and the hardware cannot disagree.
     png = os.path.join(REPO, "docs", "apc_map.png")
     sheet = _create(c, "moviefileinTOP", "apc_map", -300, -160)
     _setpar_any(sheet, ("file",), png)
     if not os.path.isfile(png):
         print(f"[td_build] APC map image missing ({png}); run tools/apc_map.py")
+
+    live = _create(c, "scriptTOP", "apc_live", -300, -300)
+    _install_callbacks(live, "apc_live_top.py")
+    _setpar(live, "Target", target_path)
+    apc_comp = dest.op("APCShow")
+    _setpar(live, "Surface", apc_comp.path if apc_comp is not None else "/APCShow")
+    lit = _create(c, "compositeTOP", "apc_lit", -140, -160)
+    _setpar(lit, "operand", "over")
+    _connect(live, lit, 0)          # the live pads over the printed labels
+    _connect(sheet, lit, 1)
+    # This one is pinned to the *map's* size, not the master's: the overlay and
+    # the picture have to be the same shape or the pads land off the print.
+    mw, mh = _map_size()
+    _set_res(lit, mw, mh)
+    sheet = lit
 
     # Lay the two panels onto one frame. A Transform TOP scales and shifts each
     # into its own column; a Composite stacks them over a black ground.
@@ -1429,6 +1474,27 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
         out.viewer = True
     except Exception:
         pass
+
+    # Two panel containers, for the panes the layout puts on the right. A
+    # Container COMP draws a TOP as its background, which is what makes a pane
+    # able to show one; a pane cannot point at a TOP directly.
+    panels = {}
+    for nm, src, label in (("program_panel", prog, "program"),
+                           ("apc_panel", sheet, "APC")):
+        pan = _try_create(c, "containerCOMP", nm, 480, -200 if nm[0] == "a" else -60)
+        if pan is None:
+            continue
+        if _setpar_any(pan, ("top",), src) is None:
+            print(f"[td_build] {pan.path}: could not set its background TOP")
+        _setpar_any(pan, ("opacity",), 1.0, quiet=True)
+        _setpar_any(pan, ("aspect", "aspectratio"), 0, quiet=True)
+        _setpar_any(pan, ("w", "width"), MASTER_RES[0] // 2, quiet=True)
+        _setpar_any(pan, ("h", "height"), MASTER_RES[1] // 2, quiet=True)
+        panels[label] = pan
+    try:
+        c.store("panels", {k: v.path for k, v in panels.items()})
+    except Exception:
+        pass
     for o in (prog, sheet, prog_t, map_t, stack, gate, out):
         try:
             o.cook(force=True)
@@ -1439,6 +1505,14 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
             print(f"[td_build] cook of {o.path} raised: {e}")
     print(f"[td_build] built dashboard -> {c.path} (view 'out'; program feed "
           f"{target_path}/out, window on monitor {monitor})")
+
+    # The working layout: network on the left, the program upper right, the
+    # APC lower right. Guarded -- a build must not fail over a window layout.
+    try:
+        from touchdesigner import layout
+        layout.three_panel(program=panels.get("program"), apc=panels.get("APC"))
+    except Exception as e:
+        print(f"[td_build] pane layout skipped: {e}")
     return c
 
 
@@ -2368,24 +2442,53 @@ def _punch_controls(base):
             "        punch()\n"
         )
     # 3) the space bar
+    # The whole surface, on the keyboard. Every action the pads reach has a
+    # key (apc_mini.KEYMAP), so the show can be built, tested and played
+    # without the controller plugged in at all.
+    #
     # A Keyboard In DAT is an *input* DAT: its text is the key log and is not
     # editable ("The operator is not editable" aborted a whole build). Like the
     # MIDI In DAT, its script lives in a Text DAT named by 'callbacks'.
     kb = _try_create(base, "keyboardinDAT", "keys", -400, -660)
     if kb is not None:
-        _setpar_any(kb, ("keys",), "space t", quiet=True)
+        try:
+            from touchdesigner.callbacks import apc_mini as _apc
+            keys_param = _apc.KEYS_PARAM
+        except Exception:
+            keys_param = "space t"
+        _setpar_any(kb, ("keys",), keys_param)
         _setpar(kb, "active", True)
         kb_cb = _create(base, "textDAT", "keys_callbacks", -400, -760)
         _setpar(kb, "callbacks", kb_cb)
-        kb_cb.text = code + (
+        kb_cb.text = (
+            "import sys\n"
+            f"sys.path.insert(0, r\"{REPO}\")\n"
+            "from touchdesigner.callbacks import apc_mini\n\n"
+            "# The keyboard drives the same perform() the pads do, so a key and\n"
+            "# a pad cannot drift apart. The APC surface is passed when it\n"
+            "# exists so its LEDs answer the keyboard too.\n"
+            "def _surface():\n"
+            "    try:\n"
+            "        for c in op('/').children:\n"
+            "            if c.name.startswith('APCShow'):\n"
+            "                return c\n"
+            "    except Exception:\n"
+            "        pass\n"
+            "    return None\n\n"
             "def onKey(dat, key, character, alt, lAlt, rAlt, ctrl, lCtrl, rCtrl,\n"
             "          shift, lShift, rShift, state, time, cmd, lCmd, rCmd):\n"
-            "    if not state:\n"
+            "    show = me.parent()\n"
+            "    k = key\n"
+            "    if shift and isinstance(k, str) and len(k) == 1 and k.isalpha():\n"
+            "        k = k.upper()          # shift picks the heavier variant\n"
+            "    try:\n"
+            "        did = apc_mini.on_key(show, k, bool(state), _surface())\n"
+            "    except Exception as e:\n"
+            "        debug('[keys]', e)\n"
             "        return\n"
-            "    if key == 't':\n"
-            "        me.parent().par.Title.pulse()\n"
-            "    elif int(me.parent().par.Clickpunch.eval()):\n"
-            "        punch()\n"
+            "    if did is None and k == 'space' and state \\\n"
+            "            and int(show.par.Clickpunch.eval()):\n"
+            "        show.par.Punch.pulse()\n"
         )
 
 

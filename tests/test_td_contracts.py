@@ -750,7 +750,9 @@ def test_every_explicit_resolution_sets_custom_mode():
     made = re.findall(r'(\w+)\s*=\s*_create\([^,]+,\s*"compositeTOP"', src)
     assert made, "no composite TOPs found"
     for var in set(made):
-        assert "_set_res(%s)" % var in src, var
+        # pinned -- to the master size, or to an explicit one (the APC overlay
+        # has to match the map picture, not the show)
+        assert "_set_res(%s)" % var in src or "_set_res(%s," % var in src, var
 
 
 def test_master_chain_has_an_fx_bypass_and_is_cooked_at_build():

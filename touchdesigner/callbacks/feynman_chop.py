@@ -63,6 +63,9 @@ def onSetupParameters(scriptOp):
     # the creep. 2 pops lines out; 6-10 lets each be watched growing.
     page.appendFloat("Growlen", label="Growth (line lengths)")[0].val = 6.0
     scriptOp.par.Growlen.normMin, scriptOp.par.Growlen.normMax = 1.0, 12.0
+    b = page.appendFloat("Brightness", label="Brightness")[0]
+    b.val = 1.8
+    scriptOp.par.Brightness.normMin, scriptOp.par.Brightness.normMax = 0.5, 4.0
     page.appendFloat("Fade", label="Fade Share")[0].val = 0.5
     scriptOp.par.Fade.normMin, scriptOp.par.Fade.normMax = 0.05, 1.0
     page.appendInt("Walkers", label="Fronts")[0].val = 3
@@ -158,7 +161,7 @@ def onCook(scriptOp):
             dt = 1.0 / 60.0 if last is None else min(0.05, max(0.0, now - last))
             show.step(dt)
 
-    rgba = show.colours()
+    rgba = show.colours(gain=float(_p(scriptOp, "Brightness", 1.8)))
     # Premultiply: a point past a line's growing tip has alpha 0, and on a build
     # whose Cd has no alpha component the colour itself must go to black (on a
     # black background) for the line to read as trimmed. Alpha is still sent.
