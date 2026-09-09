@@ -962,7 +962,13 @@ def test_lhc_readout_is_a_second_geometry_that_does_not_orbit():
     src = _src("touchdesigner", "td_build.py")
     lhc = src[src.index("def build_lhc("):src.index("def _cd_channel_names(")]
     assert '"geometryCOMP", "readout"' in lhc
-    assert "_render(c, [geo, readout], cam, None)" in lhc
+    # Rendered separately and added: one Render TOP with both geometries in
+    # its Geometry parameter showed only the readout and lost the tracks.
+    assert "_render(c, geo, cam, None)" in lhc
+    assert '_render(c, readout, cam, None, name="render_hud"' in lhc
+    assert '"with_readout"' in lhc and "_connect(hud_r, over, 0)" in lhc
+    # and the build says how much geometry each half built
+    assert "lhc {label}" in lhc and "numPoints" in lhc
     assert "_orbit(c, readout" not in lhc                  # never orbited
     assert '_install_callbacks(hud_sop, "lhc_hud_sop.py")' in lhc
     assert "readout/hud" in lhc                            # driven every frame
