@@ -475,12 +475,18 @@ class FeynmanShow:
     def step(self, dt: float) -> None:
         self.flood.step(dt)
 
-    def colours(self, cut: float = 0.02) -> np.ndarray:
+    def colours(self, cut: float = 0.02, gain: float = 1.0) -> np.ndarray:
         """(n_points, 4) float32: the colour and alpha of every point, now.
 
         The order is the order ``self.polys`` is in, so a Script SOP that
         appends those polylines and a Script CHOP that carries these channels
         line up point for point.
+
+        ``gain`` scales the ink. The tone a line carries is its age in the
+        flood, which is what makes the field breathe, so brightness is applied
+        on top of it rather than by flattening it: above 1 the dim end of the
+        fade lifts clear of the black without the lit end blowing out, because
+        the result is clamped.
         """
         f, fl = self.field, self.flood
         out = self._rgba
@@ -498,5 +504,8 @@ class FeynmanShow:
 
         out[:, :3] = np.where(self._is_line[:, None], rgb, mrgb[None, :])
         out[:, :3] *= np.where(self._is_line, tone, vt)[:, None]
+        if gain != 1.0:
+            np.multiply(out[:, :3], float(gain), out=out[:, :3])
+            np.clip(out[:, :3], 0.0, 1.0, out=out[:, :3])
         out[:, 3] = np.where(self._is_line, lit, vt > cut).astype(np.float32)
         return out

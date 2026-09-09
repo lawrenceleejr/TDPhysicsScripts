@@ -157,6 +157,73 @@ SCENE_LABELS = {
     "pops": "POP STORM", "hydrogen": "BOHMIAN H", "feynman": "FEYNMAN",
 }
 
+# ---------------------------------------------------------------------------
+# THE KEYBOARD: the same surface without the hardware.
+#
+# Every action the pads reach has a key, so the show can be built, tested and
+# even played on a laptop alone. Number keys are the scene switcher (1-9 then
+# 0 for scene 10, matching the pads' reading order), letters are the actions,
+# and the bracket keys walk the palettes. Held keys (trail, strobe, title)
+# behave as they do on the pads: they act on the down and undo on the up.
+KEY_SCENES = "1234567890"          # scene 0..10, in the pads' order
+KEYMAP = {
+    # performing
+    "p": "punch", "P": "bigpunch", "r": "refire", "R": "reset",
+    "b": "pulse", "f": "freeze", "h": "hold", "t": "title",
+    "l": "trailmax", "o": "orbitflip", "v": "variant",
+    "[": "palette", "]": "palette",
+    ",": "sceneprev", ".": "scenenext",
+    "k": "blackout", "s": "strobe",
+    # transport
+    "c": "cut", "g": "freerun", "space": "punch",
+    # tempo and levels
+    "m": "tap", "y": "sync", "u": "bpmx2", "j": "bpmhalf",
+    "a": "autoreset", "-": "sensdown", "=": "sensup", "n": "mute",
+    # the look
+    "x": "clearfx", "z": "chaos",
+    "F1": "Invert", "F2": "Edges", "F3": "Posterize", "F4": "Pixelate",
+    "F5": "Mirror", "F6": "Mono", "F7": "Solarize", "F8": "Fisheye",
+    "F9": "Tiles", "F10": "Shake", "F11": "Ascii", "F12": "Blur",
+}
+# Every key the Keyboard In DAT has to listen for, as one parameter value.
+KEYS_PARAM = " ".join(sorted(set(list(KEY_SCENES) + list(KEYMAP))))
+
+
+def on_key(t, key, pressed, apc=None):
+    """Handle one key from the show's Keyboard In DAT.
+
+    Returns the action it ran (or ``('scene', i)``), or None if the key is not
+    mapped -- so the caller can stay quiet about keys that mean nothing here.
+    """
+    if t is None or not key:
+        return None
+    if key in KEY_SCENES:
+        if not pressed:
+            return None
+        idx = KEY_SCENES.index(key)
+        if idx < N_SCENES:
+            _set_menu(t, "Scene", idx)
+            if apc is not None:
+                st = _st(apc)
+                _animate(st, "scene", (3.5, 3.5), _scene_color(t, idx))
+                repaint(apc)
+            return ("scene", idx)
+        return None
+    action = KEYMAP.get(key)
+    if action is None:
+        return None
+    if not pressed and action not in MOMENTARY:
+        return None                     # only held actions care about the up
+    if action == "chaos":
+        if pressed:
+            _pulse(t, "Chaosburst")
+        return action
+    perform(t, action, apc, pressed=pressed)
+    if apc is not None:
+        repaint(apc)
+    return action
+
+
 # --- APC mini mk2 hardware map -------------------------------------------
 TRACK_BTN = [100, 101, 102, 103, 104, 105, 106, 107]  # bottom round buttons
 SCENE_BTN = [112, 113, 114, 115, 116, 117, 118, 119]  # right column buttons

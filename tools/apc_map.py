@@ -88,6 +88,34 @@ def _round_svg(cx, cy, label, sub=None, blink=False):
     return "\n".join(out)
 
 
+def geometry(ns):
+    """Where every control sits in the drawing, as plain numbers.
+
+    The live view (callbacks/apc_live_top.py) paints the real LED colours over
+    the rendered picture, so it needs the same rectangles this drawing used --
+    exported rather than re-derived, because a second copy of the arithmetic
+    is a second chance to be wrong.
+    """
+    grid_w = 8 * PAD + 7 * GAP
+    right_x = ORIGIN_X + grid_w + 34
+    bottom_y = ORIGIN_Y + grid_w + 34
+    fader_y = bottom_y + 70
+    out = {"width": right_x + 120, "height": fader_y + 150,
+           "pad": PAD, "grid": {}, "round": {}}
+    for note in range(64):
+        col, row = note % 8, note // 8
+        out["grid"][str(note)] = [ORIGIN_X + col * (PAD + GAP),
+                                  ORIGIN_Y + (7 - row) * (PAD + GAP), PAD, PAD]
+    r = 14
+    for k, note in enumerate(ns["SCENE_BTN"]):
+        cy = ORIGIN_Y + k * (PAD + GAP) + PAD / 2 - 10
+        out["round"][str(note)] = [right_x + 40 - r, cy - r, 2 * r, 2 * r]
+    for k, note in enumerate(ns["TRACK_BTN"]):
+        cx = ORIGIN_X + k * (PAD + GAP) + PAD / 2
+        out["round"][str(note)] = [cx - r, bottom_y - r, 2 * r, 2 * r]
+    return out
+
+
 def render_svg(ns):
     scene_names = ns["SCENE_NAMES"]
     scene_labels = ns["SCENE_LABELS"]
@@ -220,6 +248,12 @@ def main(argv):
     with open(out, "w") as fh:
         fh.write(svg)
     print("wrote", out)
+    # The pad rectangles, for the live view to paint over the picture.
+    import json
+    geo_path = os.path.splitext(out)[0] + ".json"
+    with open(geo_path, "w") as fh:
+        json.dump(geometry(load_controller()), fh, indent=1)
+    print("wrote", geo_path)
     if "--no-png" not in argv:
         write_png(out, os.path.splitext(out)[0] + ".png")
 

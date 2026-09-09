@@ -176,7 +176,11 @@ cluster), `Bodies`, `G`, `Time Step`, `Softening`, `Substeps/Frame`,
 `Point Size`, `Palette`, `Reset / New System`. Lit by **one soft-edged
 spotlight and nothing else** — no ambient, no fill, no environment — so a body
 is only visible while it is inside the beam, and the beam sweeps slowly so
-bodies drift through it on their own.
+bodies drift through it on their own. Each body is a **lit core inside a
+luminous shell**: an opaque shaded sphere reads as plastic however good the
+material is, so a second, larger additive pass makes the mass emit as well as
+reflect, and the film stock's halation then treats it the way a lens would.
+Bodies cast soft shadows on each other in the beam.
 
 **Flow / Soft Body / Storm** (same callback, `Mode` switch) — `Particles`,
 `Flow Speed`, `Noise Scale`, `Evolve Rate`, `Soft Body Spin`, `Point Size`,
@@ -215,7 +219,9 @@ are separate operators. On `geo/lines`: `Field` (six shipped fields — three 16
 of one traverse; 0.4 keeps the pattern turning over, 1.0 fills the frame and
 holds it), `Seconds / Traverse` (45 by default: slow), `Growth (line lengths)`
 (the creep — how far the front travels while a line draws itself; 6 lets each
-line be watched growing, 2 pops them out), `Fade Share`, `Fronts`, `Palette`,
+line be watched growing, 2 pops them out), `Fade Share`, `Brightness` (1.8 — the gain is applied on top of the flood's
+tone and clamped, so the dim end of the fade lifts clear of the black without
+the lit end blowing out), `Fronts`, `Palette`,
 `Hold Lit` (light everything and freeze, for a still), `New Fronts`.
 
 **Open Data** — `Seconds/Event`, `Grow Time`, `World Scale`, `Event Order`
@@ -363,6 +369,23 @@ composite a GLSL oscilloscope + radial spectrum "iris" over the live scene.
 
 ## The operator's view
 
+`build_all` arranges TouchDesigner into **three panes** the way the show is
+actually run (`touchdesigner/layout.py`):
+
+```
+  network editor        |   the program output
+  (the whole patch)     |-----------------------
+                        |   the APC, live
+```
+
+The lower-right pane is a **live view of the controller**, not a picture of
+one: `apc_live_top.py` reads the LED state out of the surface's own send cache
+and paints it over the printed map, so the panel and the hardware cannot
+disagree — a pad that is wrong on the desk is wrong here too. Pulse and blink
+pads breathe on the same clock the hardware uses. With no APC connected it
+falls back to the resting picture computed from the show, so it is still a
+guide while the keyboard is driving everything.
+
 `build_all` also drops a **`Dashboard`** COMP at the top level. View its `out`
 on your laptop and you get the show as it goes out beside the control map:
 
@@ -425,6 +448,28 @@ wipe across in the live palette colour, Title curtains down from the top,
 Palette sparkles, Freeze flashes ice-blue, Blackout darkens the grid and
 returns, and any scene cut ripples out in the new scene's colour. All of this
 rides on by-difference sending, so a quiet frame costs zero MIDI bytes.
+
+### Without the APC: the keyboard
+
+Every action the pads reach has a key, so the show can be built, tested and
+played with nothing plugged in. It calls the same `perform()` the pads call, so
+a key and a pad cannot drift apart, and it repaints the surface — the LEDs
+answer the keyboard too.
+
+| Keys | Does |
+|---|---|
+| **`1`–`9`, `0`** | **Scene switcher** — the eleven scenes in the pads' reading order |
+| `,` `.` | Scene ← / → &nbsp;·&nbsp; `[` `]` next palette &nbsp;·&nbsp; `v` variant |
+| `p` / `P` | Punch / Big Punch (`P` also throws the chaos burst) &nbsp;·&nbsp; `space` punch |
+| `r` / `R` | Re-fire / Reset &nbsp;·&nbsp; `b` manual beat &nbsp;·&nbsp; `o` orbit flip |
+| `f` `h` `k` | Freeze · Hold · Blackout &nbsp;·&nbsp; `t` title, `l` trail max, `s` strobe (**held**) |
+| `c` `g` | Cut · Freerun &nbsp;·&nbsp; `m` tap, `y` sync, `u` / `j` BPM ×2 / ÷2 |
+| `a` `-` `=` `n` | Auto-reset levels · sensitivity − / + · mute (audio reactivity off) |
+| `x` `z` | Clear FX · **Chaos burst** &nbsp;·&nbsp; `F1`–`F12` the first twelve screen FX |
+
+Held keys behave as the pads do: they act on the press and undo on the release.
+The table lives in `apc_mini.KEYMAP`; the Keyboard In DAT listens for exactly
+those keys.
 
 **The reset mechanism.** APC controllers come up dark, can be hot-plugged, and
 their LEDs drift out of sync if the show is also driven from the mouse. The
