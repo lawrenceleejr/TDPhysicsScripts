@@ -397,6 +397,13 @@ on your laptop and you get the show as it goes out beside the control map:
 - `Program / Map Split` moves the divider; `Show APC Map` off gives the plain
   program feed full frame.
 
+**Watching the show in a pane.** Point a Panel pane at
+**`/Dashboard/program_panel`** (and `/Dashboard/apc_panel` for the live
+controller). Pointing one at `/PhysicsVJ` gives an empty **grey** panel:
+`PhysicsVJ` is a Base COMP and a Base COMP has no panel of its own. The same
+applies the other way round — a panel's `Top` field wants a TOP, so
+`/PhysicsVJ/out`, not `/PhysicsVJ`. The build report prints both paths.
+
 Beside it is a **`program_window`** Window COMP pointed at the same TOP, set to
 **monitor 2**; the dashboard's `Open Program Window` pulse opens it.
 

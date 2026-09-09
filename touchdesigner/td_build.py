@@ -1475,19 +1475,29 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
     except Exception:
         pass
 
-    # Two panel containers, for the panes the layout puts on the right. A
-    # Container COMP draws a TOP as its background, which is what makes a pane
-    # able to show one; a pane cannot point at a TOP directly.
+    # Two panel containers, for the panes the layout puts on the right.
+    #
+    # Why these exist at all: a Panel pane can only show a COMP that *has* a
+    # panel, and PhysicsVJ is a Base COMP, which has none -- point a pane at it
+    # and you get an empty grey rectangle. A Container COMP does have one, and
+    # draws a TOP as its background, so these two are the things to point a
+    # pane at. (The other way round works too: a panel's own TOP field wants a
+    # TOP, so PhysicsVJ/out rather than PhysicsVJ.)
     panels = {}
     for nm, src, label in (("program_panel", prog, "program"),
                            ("apc_panel", sheet, "APC")):
         pan = _try_create(c, "containerCOMP", nm, 480, -200 if nm[0] == "a" else -60)
         if pan is None:
             continue
-        if _setpar_any(pan, ("top",), src) is None:
+        if _setpar_any(pan, ("top", "background", "bgtop"), src) is None:
             print(f"[td_build] {pan.path}: could not set its background TOP")
         _setpar_any(pan, ("opacity",), 1.0, quiet=True)
+        _setpar_any(pan, ("display",), True, quiet=True)
+        _setpar_any(pan, ("topsmoothness",), "mipmaplinear", quiet=True)
+        # Fill the pane rather than letting the panel letterbox itself.
         _setpar_any(pan, ("aspect", "aspectratio"), 0, quiet=True)
+        _setpar_any(pan, ("hmode", "horzmode"), "fill", quiet=True)
+        _setpar_any(pan, ("vmode", "vertmode"), "fill", quiet=True)
         _setpar_any(pan, ("w", "width"), MASTER_RES[0] // 2, quiet=True)
         _setpar_any(pan, ("h", "height"), MASTER_RES[1] // 2, quiet=True)
         panels[label] = pan
@@ -1505,6 +1515,15 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
             print(f"[td_build] cook of {o.path} raised: {e}")
     print(f"[td_build] built dashboard -> {c.path} (view 'out'; program feed "
           f"{target_path}/out, window on monitor {monitor})")
+    # Say plainly what to point a pane at. PhysicsVJ is a Base COMP with no
+    # panel of its own, so a Panel pane aimed at it comes up grey -- which is
+    # a confusing five minutes unless the build says so.
+    print(f"[td_build] to watch the show in a pane: set a Panel pane's owner to "
+          f"{panels['program'].path if 'program' in panels else c.path + '/program_panel'}"
+          f" (or a panel's TOP to {target_path}/out -- not {target_path}, "
+          f"which is a Base COMP and has no panel)")
+    if "APC" in panels:
+        print(f"[td_build] the live APC panel is {panels['APC'].path}")
 
     # The working layout: network on the left, the program upper right, the
     # APC lower right. Guarded -- a build must not fail over a window layout.
