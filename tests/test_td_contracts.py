@@ -203,7 +203,8 @@ def _fake_show(n_scenes, palettes):
     show = _Op("/PhysicsVJ", scenes, pars=[("Scene", 0), ("Nextscene", 1), ("Crossfade", 0.0),
                                             ("Freerunall", 0), ("Cut", 0), ("Freeze", 0),
                                             ("Blackout", 0), ("Title", 0), ("Titlehold", 4.0),
-                                            ("Reactive", 1), ("Reactamount", 0.6)]
+                                            ("Reactive", 1), ("Reactamount", 0.6),
+                                            ("Chaosburst", 0), ("Chaos", 0.0)]
                                             + [(f, 0) for f in fx])
     return show
 
@@ -445,7 +446,8 @@ def test_upper_left_quadrant_performs_on_the_live_scene():
     ns["on_midi"](apc, "Note On", 1, 7 * 8 + 0, 100)          # PUNCH
     assert sim.par.Punch.pulses == 1
     ns["on_midi"](apc, "Note On", 1, 7 * 8 + 1, 100)          # BIG PUNCH
-    assert sim.par.Punch.pulses == 2 and sim.par.Punchstrength.val == 3.0
+    assert sim.par.Punch.pulses == 2 and sim.par.Punchstrength.val == 3.5
+    assert show.par.Chaosburst.pulses == 1     # the frame comes apart with it
     ns["on_midi"](apc, "Note On", 1, 7 * 8 + 3, 100)          # RESET
     assert sim.par.Reset.pulses == 1
     ns["on_midi"](apc, "Note On", 1, 6 * 8 + 0, 100)          # PULSE = manual beat
@@ -759,7 +761,7 @@ def test_master_chain_has_an_fx_bypass_and_is_cooked_at_build():
     assert 'appendToggle("Fx"' in src
     assert '"0 if parent().par.Fx.eval() else 1"' in src
     build_all = src[src.index("def build_all("):src.index("# =====")]
-    assert "for o in (cross, mixed, post, final):" in build_all
+    assert "for o in (cross, mixed, post, stock, final):" in build_all
     # Par objects are compared by value, never as objects
     assert "par.Crossfade < 1" not in src and "par.Crossfade > 0" not in src
 
@@ -993,4 +995,81 @@ def test_scene_looks_the_report_asked_for_are_wired():
     assert 'appendFloat("Depthcue"' in hy
     ns = _load_apc()
     assert ("sim", "Morphtime", 0.5, 25.0) in ns["FADER_MAP"]["hydrogen"]
+
+
+def test_the_film_stock_is_one_pass_over_the_whole_show():
+    """The grade, grain and dirt are a single pass after the performer's FX
+    and before the title, gated so a failed shader leaves the clean mix. It is
+    deliberately separate from _post_fx: that is what gets toggled for a bar,
+    this is what the show is made of all night."""
+    src = _src("touchdesigner", "td_build.py")
+    g = src[src.index("def _grunge("):src.index("def _title_overlay(")]
+    assert '"switchTOP"' in g and "Stock.eval()" in g
+    assert "grunge.frag" in g
+    for u in ("uGrain", "uGrade", "uAudio"):
+        assert '"%s"' % u in g, u
+    # the dials, appended from one table so label and range stay together
+    assert "page.appendFloat(pn, label=label)" in g
+    for pn in ("Grain", "Halation", "Dust", "Weave", "Contrast", "Splittone", "Chaos"):
+        assert '("%s",' % pn in g, pn
+    # a burst decays from a stored timestamp: no per-frame Python, cannot stick
+    assert "chaos_t0" in g and "Chaosdecay" in g
+    build_all = src[src.index("def build_all("):src.index("def _scene_feed(")]
+    assert "_grunge(base, bypass, reactor, tempo" in build_all
+    assert "_title_overlay(base, stocked" in build_all      # the title is printed on it
+    frag = _src("touchdesigner", "shaders", "grunge.frag")
+    for u in ("uGrain", "uGrade", "uAudio"):
+        assert "uniform vec4 %s;" % u in frag, u
+    # the look it is aiming for, as the shader's own knobs
+    for tell in ("HALATION", "GRAIN", "DUST", "WEAVE", "CHAOS", "SHADOW_TONE", "HIGH_TONE"):
+        assert tell in frag, tell
+
+
+def test_the_show_runs_at_1080p_with_bundled_type():
+    """Master resolution and the fonts the show is set in -- the two things
+    that made it read as a game rather than a render."""
+    td_build = importlib.import_module("touchdesigner.td_build")
+    assert td_build.MASTER_RES == (1920, 1080)
+    src = _src("touchdesigner", "td_build.py")
+    # renders are master size, not a hardcoded 720p
+    assert "w=MASTER_RES[0], h=MASTER_RES[1]" in src
+    assert "w=1280, h=720" not in src
+    # the fonts are bundled with their licences, and set from the file first
+    for f in ("ArchivoBlack-Regular.ttf", "Archivo-Variable.ttf", "JetBrainsMono-Variable.ttf"):
+        path = os.path.join(ROOT, "assets", "fonts", f)
+        assert os.path.isfile(path), f
+        with open(path, "rb") as fh:
+            assert fh.read(4) == b"\x00\x01\x00\x00", f      # real TrueType
+    assert os.path.isfile(os.path.join(ROOT, "assets", "fonts", "Archivo-OFL.txt"))
+    font = src[src.index("def _font("):src.index("CAM_NEAR, CAM_FAR = 0.5")]
+    assert '"fontfile"' in font and '"font"' in font and "FONT_DIR" in font
+    # every Text TOP the show draws gets one of the roles
+    assert src.count("_font(") >= 4
+    assert '_font(text, "display")' in src and '_font(title, "mono")' in src
+
+
+def test_the_raymarch_buys_its_smoothness_with_resolution():
+    """A raymarch stutters because of what it costs, not how it moves: it
+    renders below master size and is fitted back up before the bloom."""
+    src = _src("touchdesigner", "td_build.py")
+    sdf = src[src.index("def build_raymarch("):src.index("# ---------------------------------------------------------------------------\n# Master post-FX")]
+    assert 'appendFloat("Quality"' in sdf
+    assert '_set_res(sdf, scale_expr="parent().par.Quality.eval()")' in sdf
+    assert '"fitTOP"' in sdf and "_glow(c, up," in sdf
+    frag = _src("touchdesigner", "shaders", "raymarch.frag")
+    assert "for (int i = 0; i < 88; i++)" in frag       # fewer marches
+    assert "uMid * 0.35" not in frag                    # no audio in the camera
+
+
+def test_the_program_window_is_full_screen_on_display_one():
+    src = _src("touchdesigner", "td_build.py")
+    dash = src[src.index("def build_dashboard("):src.index("def build_all(")]
+    assert 'name="Dashboard", monitor=1' in dash
+    assert '"fullscreen"' in dash and '"winsizemode", "sizemode", "size"' in dash
+    assert '"borders"' in dash and '"cursorvisible"' in dash
+    assert 'appendPulse("Closewindow"' in dash
+    # the PhysicsVJ viewer is pointed at ./out, and no stale twin survives
+    build_all = src[src.index("def build_all("):src.index("def _scene_feed(")]
+    assert '"opviewer",), "./out"' in build_all
+    assert 'for stale in ("out1", "out2")' in build_all
 

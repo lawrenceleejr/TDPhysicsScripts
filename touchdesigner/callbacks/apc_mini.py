@@ -488,9 +488,11 @@ def perform(t, action, apc=None, pressed=True):
     st = _st(apc) if apc is not None else {"held": {}, "taps": []}
 
     if action in ("punch", "bigpunch"):
+        if action == "bigpunch":
+            _pulse(t, "Chaosburst")      # the frame comes apart with the hit
         if _has(sim, "Punch"):
             if action == "bigpunch":
-                _setf(sim, "Punchstrength", 3.0)
+                _setf(sim, "Punchstrength", 3.5)
             _pulse(sim, "Punch")
         else:
             _refire(t)

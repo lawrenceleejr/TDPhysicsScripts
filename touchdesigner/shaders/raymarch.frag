@@ -142,7 +142,7 @@ vec3 normal(vec3 p) {
 // Soft shadow by marching toward the light (penumbra ~ 1/k).
 float softShadow(vec3 ro, vec3 rd, float k) {
     float res = 1.0, t = 0.05;
-    for (int i = 0; i < 18; i++) {
+    for (int i = 0; i < 12; i++) {          // what smoothness costs here
         float h = map(ro + rd * t);
         if (h < 0.001) return 0.0;
         res = min(res, k * h / t);
@@ -174,7 +174,9 @@ void main() {
     // away from the view dir so cross() never collapses (NaN frame).
     float a = T * 0.15;                              // one continuous orbit
     float dist = 4.2 / max(uZoom, 0.2);
-    vec3 ro = vec3(sin(a) * dist, 0.6 + uMid * 0.35 + 0.4 * sin(T * 0.11), cos(a) * dist);
+    // No audio in the camera: a moving eye is where any jitter shows worst,
+    // so the orbit is pure time and the music reaches only the forms.
+    vec3 ro = vec3(sin(a) * dist, 0.6 + 0.4 * sin(T * 0.11), cos(a) * dist);
     vec3 fwd = safeNorm(-ro);
     vec3 upRef = abs(fwd.y) > 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
     vec3 rgt = safeNorm(cross(upRef, fwd));
@@ -185,7 +187,7 @@ void main() {
     float t = 0.0, glow = 0.0;
     bool hit = false;
     float stepScale = (gShape == 2) ? 0.6 : 0.8;     // fractals want smaller steps
-    for (int i = 0; i < 110; i++) {
+    for (int i = 0; i < 88; i++) {          // fewer, larger marches: fps is
         vec3 p = ro + rd * t;
         float d = map(p);
         glow += 0.02 / (0.01 + abs(d));   // accumulate volumetric glow

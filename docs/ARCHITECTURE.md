@@ -251,6 +251,31 @@ The scene/palette tables (`SCENE_NAMES`, the per-scene re-fire pulse names, the
 palette→colour map) are constants at the top of `apc_mini.py` — re-map the
 surface by editing those, not the wiring.
 
+## The film stock (_grunge)
+
+Two passes sit over the mix and they are deliberately not one. `_post_fx` is
+the performer's surface: sixteen effects toggled for a bar and turned off
+again. `_grunge` is the film stock, and it stays on all night -- grade, grain,
+dirt, gate weave and the Chaos dial. Keeping them apart means an effect can be
+slammed without disturbing the look, and the look can be dialled without
+touching the effects. The stock runs *before* the title overlay, so a title is
+printed on the same stock as the picture instead of being laid on it clean.
+
+The Chaos burst is worth copying elsewhere: the pulse stores a timestamp, and
+the shader's chaos uniform is an expression that decays from it. No per-frame
+Python, nothing to reset, and it cannot get stuck on -- the same shape as the
+title overlay's fade and the APC's press animations.
+
+## Resolution
+
+`MASTER_RES` is 1920x1080 and every write of `resolutionw`/`resolutionh` goes
+through `_set_res`, which sets the custom output mode first (without it the
+parameters are ignored and a Render TOP sits at 256x256 -- the bug that made
+the whole show square and blocky). `_set_res(top, scale_expr=...)` binds the
+size to a fraction instead, which is how the raymarch renders below master
+size; it is fitted back up before its bloom. That is the only stage that does,
+and it is there because a raymarch's smoothness is a frame-rate question.
+
 ## The dashboard and the LHC readout
 
 `build_dashboard` builds the operator's view at the top level. The program

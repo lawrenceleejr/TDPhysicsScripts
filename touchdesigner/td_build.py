@@ -703,6 +703,12 @@ def _glow(container, src, name="out", size=14.0, x=460, y=200, threshold=0.5):
     blur = _create(container, "blurTOP", name + "_blur", x, y - 150)
     _connect(bright, blur)
     _setpar(blur, "size", size)
+    # A single-pass box blur has a hard shoulder that reads as a glow sticker.
+    # Several passes of a Gaussian approximate the wide, soft falloff a lens
+    # actually has, which is most of what separates bloom from haze.
+    _setpar_any(blur, ("filter",), "gaussian", quiet=True)
+    _setpar_any(blur, ("passes",), 3, quiet=True)
+    _set_res(blur)
 
     black = _create(container, "constantTOP", name + "_bg", x, y - 300)
     _setpar(black, "colorr", 0.0)
@@ -1599,10 +1605,15 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     _connect(mixed, bypass, 1)
     _expr(bypass, "index", "0 if parent().par.Fx.eval() else 1")
 
+    # The film stock: one grade, grain and dirt over the whole show, after the
+    # performer's FX and before the title (a title should be printed on the
+    # same stock as everything else, not laid on top of it clean).
+    stocked, stock = _grunge(base, bypass, reactor, tempo, x=700)
+
     # Ink-bleed scene title (TITLE button) over the show, then the blackout
-    # level; both sit after the Fx bypass so they work with post FX off too.
-    titled, ink = _title_overlay(base, bypass, scene_names, x=760)
-    master = _create(base, "levelTOP", "master_level", 920, 0)
+    # level; both sit after the stock so they work with post FX off too.
+    titled, ink = _title_overlay(base, stocked, scene_names, x=900)
+    master = _create(base, "levelTOP", "master_level", 1060, 0)
     _connect(titled, master)
     _expr(master, "opacity", "0 if parent().par.Blackout.eval() else 1")
     _set_res(master)
@@ -1617,7 +1628,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
                 old.destroy()
             except Exception:
                 pass
-    final = _create(base, "nullTOP", "out", 1080, 0)
+    final = _create(base, "nullTOP", "out", 1220, 0)
     _connect(master, final)
     _set_res(final)
     if _setpar_any(base, ("opviewer",), "./out") is None:
@@ -1630,7 +1641,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
     # Pull the master chain once now. Nothing else does during a headless
     # build, so without this a GLSL compile failure in post/overlay would
     # never reach build_report.txt -- it would just be a black 'out' later.
-    for o in (cross, mixed, post, final):
+    for o in (cross, mixed, post, stock, final):
         try:
             o.cook(force=True)
         except Exception as e:
@@ -1639,7 +1650,7 @@ def build_all(dest=None, name="PhysicsVJ", apc=True):
         ink.cook(force=True)     # surface a title-shader compile error now
     except Exception as e:
         print(f"[td_build] cook of {ink.path} raised: {e}")
-    for o in (switch_a, switch_b, cross, mixed, post, bypass, ink, master, final):
+    for o in (switch_a, switch_b, cross, mixed, post, bypass, stock, ink, master, final):
         try:
             err = o.errors()
             if err:
@@ -2174,6 +2185,78 @@ def _post_fx(container, src, reactor, tempo, name="post", x=480, y=0):
     _glsl_vec4(post, 6, "uTone", ("parent().par.Exposure", 0.03, 1.0,
                                   "int(parent().par.Darkmode.eval())"))
     return post
+
+
+def _grunge(container, src, reactor, tempo, name="stock", x=700, y=0):
+    """The film stock: the grade, the grain, the dirt and the chaos dial.
+
+    Separate from _post_fx on purpose. That pass is the performer's effects --
+    things toggled for a bar and turned off. This one is what the show is made
+    of, and it stays on all night: crushed contrast, cold shadows against warm
+    highlights, halation around anything hot, grain in the mids, dust, a gate
+    that never quite registers, and one Chaos dial that takes the frame apart
+    on the beat. Switch-gated, so a shader that will not compile leaves the
+    clean mix rather than a black screen.
+    """
+    rex = _react_exprs(reactor)
+    page = _custom_page(container, "Stock")
+    if not hasattr(container.par, "Stock"):
+        page.appendToggle("Stock", label="Film Stock (grade / grain / dirt)")
+        _setpar(container, "Stock", True)
+        for pn, label, val, lo, hi in (
+            ("Grain", "Grain", 0.65, 0.0, 2.0),
+            ("Halation", "Halation", 0.55, 0.0, 2.0),
+            ("Dust", "Dust + Scratches", 0.5, 0.0, 2.0),
+            ("Weave", "Gate Weave", 0.6, 0.0, 2.0),
+            ("Contrast", "Contrast", 0.45, 0.0, 1.5),
+            ("Splittone", "Split Tone", 0.7, 0.0, 1.5),
+            ("Chaos", "Chaos", 0.0, 0.0, 1.0),
+        ):
+            page.appendFloat(pn, label=label)[0].val = val
+            try:
+                getattr(container.par, pn).normMin = lo
+                getattr(container.par, pn).normMax = hi
+            except Exception:
+                pass
+        page.appendPulse("Chaosburst", label="Chaos Burst")
+        page.appendFloat("Chaosdecay", label="Chaos Burst Decay (s)")[0].val = 0.7
+
+    # A burst is a timestamp in storage and an expression that decays from it:
+    # nothing per-frame in Python, and it cannot get stuck on.
+    burst = _create(container, "parameterexecuteDAT", name + "_burst", -200, -510)
+    _setpar(burst, "op", container)
+    _setpar(burst, "pars", "Chaosburst")
+    _setpar(burst, "onpulse", True)
+    _setpar(burst, "active", True)
+    burst.text = (
+        "def onPulse(par):\n"
+        "    par.owner.store('chaos_t0', absTime.seconds)\n"
+    )
+    try:
+        container.store("chaos_t0", -1e9)
+    except Exception:
+        pass
+
+    stock = _create(container, "glslTOP", name, x, y)
+    _setpar(stock, "pixeldat", _shader_dat(container, name + "_src", "grunge.frag", x, y - 170))
+    _connect(src, stock, 0)
+    _set_res(stock)
+    _glsl_vec4(stock, 0, "uGrain", ("parent().par.Grain", "parent().par.Halation",
+                                    "parent().par.Dust", "parent().par.Weave"))
+    # Chaos is the dial plus whatever is left of the last burst.
+    chaos_expr = ("min(1.0, parent().par.Chaos.eval() + max(0.0, 1.0 - "
+                  "(absTime.seconds - parent().fetch('chaos_t0', -1e9)) / "
+                  "max(parent().par.Chaosdecay.eval(), 1e-3)))")
+    _glsl_vec4(stock, 1, "uGrade", ("parent().par.Contrast", "parent().par.Splittone",
+                                    chaos_expr, "absTime.seconds"))
+    _glsl_vec4(stock, 2, "uAudio", (rex["level"], rex["beat"], rex["high"], rex["pulse"]))
+
+    gate = _create(container, "switchTOP", name + "_gate", x + 170, y)
+    _connect(src, gate, 0)          # Stock off: the clean mix, pass not cooked
+    _connect(stock, gate, 1)
+    _expr(gate, "index", "1 if parent().par.Stock.eval() else 0")
+    _set_res(gate)
+    return gate, stock
 
 
 def _title_overlay(container, src, scene_names, name="title", x=760, y=0):

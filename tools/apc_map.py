@@ -48,17 +48,23 @@ def pal_hex(ns, name):
 
 PAD, GAP = 72, 8
 ORIGIN_X, ORIGIN_Y = 36, 80
-FONT = "'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif"
+# The show's own faces (assets/get_fonts.py bundles the files; the SVG names
+# the families so a viewer with them installed, or the page that embeds this
+# with a webfont, renders the map in the same type as the show).
+FONT = "'Archivo', 'Helvetica Neue', Arial, sans-serif"
+FONT_MONO = "'JetBrains Mono', ui-monospace, monospace"
 
 
 def _esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _text(x, y, s, size=10.5, weight=500, fill=TEXT, anchor="middle", extra=""):
+def _text(x, y, s, size=10.5, weight=500, fill=TEXT, anchor="middle", extra="",
+          mono=False):
     return ('<text x="%.1f" y="%.1f" font-size="%.1f" font-weight="%d" fill="%s" '
             'text-anchor="%s" font-family="%s" %s>%s</text>'
-            % (x, y, size, weight, fill, anchor, FONT, extra, _esc(s)))
+            % (x, y, size, weight, fill, anchor, FONT_MONO if mono else FONT,
+               extra, _esc(s)))
 
 
 def _pad_svg(x, y, kind, top, bottom=None, dot=None):
@@ -69,7 +75,7 @@ def _pad_svg(x, y, kind, top, bottom=None, dot=None):
     cy = y + PAD / 2 + (4 if bottom is None else -2)
     out.append(_text(x + PAD / 2, cy, top, 11 if len(top) <= 9 else 9.5, 600, TEXT))
     if bottom:
-        out.append(_text(x + PAD / 2, cy + 14, bottom, 8.5, 400, INK[kind]))
+        out.append(_text(x + PAD / 2, cy + 14, bottom, 8.0, 400, INK[kind], mono=True))
     return "\n".join(out)
 
 
@@ -78,7 +84,7 @@ def _round_svg(cx, cy, label, sub=None, blink=False):
            % (cx, cy, FILL["round"], INK["round"], ' stroke-dasharray="3 2"' if blink else "")]
     out.append(_text(cx, cy + 32, label, 8.5, 600, TEXT))
     if sub:
-        out.append(_text(cx, cy + 43, sub, 7.5, 400, INK["round"]))
+        out.append(_text(cx, cy + 43, sub, 7.2, 400, INK["round"], mono=True))
     return "\n".join(out)
 
 
@@ -103,7 +109,7 @@ def render_svg(ns):
     # Title line.
     parts.append(_text(ORIGIN_X, 30, "APC mini mk2  ·  PhysicsVJ control map", 15, 600, TEXT, "start"))
     parts.append(_text(ORIGIN_X, 46, "grid note = row × 8 + col, row 0 at the bottom · factory mode, MIDI channel 1",
-                       9.5, 400, MUTED, "start"))
+                       9.5, 400, MUTED, "start", mono=True))
 
     # The 8x8 grid.
     for note in range(64):
