@@ -11,6 +11,7 @@ the Cut/Freerun buttons arming scenes once the grid grew past six columns.
 
 import ast
 import importlib
+import json
 import inspect
 import os
 import re
@@ -1074,4 +1075,108 @@ def test_the_program_window_is_full_screen_on_display_one():
     build_all = src[src.index("def build_all("):src.index("def _scene_feed(")]
     assert '"opviewer",), "./out"' in build_all
     assert 'for stale in ("out1", "out2")' in build_all
+
+
+def test_the_keyboard_reaches_every_action_the_pads_do():
+    """The show has to be playable with nothing plugged in, and a key must not
+    be able to drift from its pad: both go through perform()."""
+    ns = _load_apc()
+    keymap, scenes = ns["KEYMAP"], ns["KEY_SCENES"]
+    # numbers are the scene switcher, in the pads' reading order
+    assert scenes == "1234567890" and len(scenes) >= ns["N_SCENES"] - 1
+    # every mapped action is one the surface actually performs
+    known = set(ns["LABELS"]) | set(ns["FX_NAMES"]) | {"chaos"}
+    assert not {v for v in keymap.values() if v not in known}
+    # the performing actions are all reachable
+    for action in ("punch", "bigpunch", "refire", "reset", "freeze", "title",
+                   "cut", "tap", "mute", "clearfx", "blackout", "strobe"):
+        assert action in keymap.values(), action
+    # no key is claimed twice, and the DAT parameter lists all of them
+    assert len(set(keymap)) == len(keymap)
+    assert set(ns["KEYS_PARAM"].split()) == set(keymap) | set(scenes)
+
+    show = _fake_show(11, 8)
+    ns2 = _load_apc(show)
+    apc = _surface(show)
+    # a number cuts to that scene
+    assert ns2["on_key"](show, "3", True, apc) == ("scene", 2)
+    assert show.par.Scene.val == 2
+    assert ns2["on_key"](show, "0", True, apc) == ("scene", 9)
+    # a letter performs, and only on the press unless it is a held action
+    assert ns2["on_key"](show, "f", True, apc) == "freeze"
+    assert show.par.Freeze.val == 1
+    assert ns2["on_key"](show, "f", False, apc) is None      # no undo on release
+    assert show.par.Freeze.val == 1
+    # a held action undoes on the release, exactly as the pad does
+    show.op("flow").par.Trail.val = 0.2
+    show.par.Scene.val = 2
+    assert ns2["on_key"](show, "l", True, apc) == "trailmax"
+    assert show.op("flow").par.Trail.val > 0.9
+    assert ns2["on_key"](show, "l", False, apc) == "trailmax"
+    assert show.op("flow").par.Trail.val == 0.2
+    # chaos is a burst on the show, not a scene action
+    assert ns2["on_key"](show, "z", True, apc) == "chaos"
+    assert show.par.Chaosburst.pulses == 1
+    # an unmapped key is silently not ours
+    assert ns2["on_key"](show, "q", True, apc) is None
+    assert ns2["on_key"](None, "1", True, apc) is None
+    # the builder listens for exactly the mapped keys and dispatches to on_key
+    src = _src("touchdesigner", "td_build.py")
+    assert "_apc.KEYS_PARAM" in src and "apc_mini.on_key(show, k, bool(state)" in src
+
+
+def test_the_apc_panel_shows_the_real_led_state():
+    """A live view has to come from what the surface actually sent, or it is
+    just a second guess at the same thing."""
+    cb = _src("touchdesigner", "callbacks", "apc_live_top.py")
+    assert "apc_mini._LED_STATE" in cb                 # the real send cache
+    assert "apc_mini.APC_RGB" in cb                    # the hardware's colours
+    assert "_base_frame" in cb                         # the no-controller fallback
+    assert "apc_map.json" in cb and "H - (y + h)" in cb   # y-down JSON into a y-up TOP
+    # the geometry is exported beside the picture, not re-derived
+    tool = _src("tools", "apc_map.py")
+    assert "def geometry(" in tool and "json.dump(geometry(" in tool
+    geo = os.path.join(ROOT, "docs", "apc_map.json")
+    assert os.path.isfile(geo)
+    with open(geo) as fh:
+        g = json.load(fh)
+    ns = _load_apc()
+    assert len(g["grid"]) == 64
+    assert set(g["round"]) == {str(n) for n in ns["TRACK_BTN"] + ns["SCENE_BTN"]}
+    # the boxes sit inside the picture
+    for box in list(g["grid"].values()) + list(g["round"].values()):
+        x, y, w, h = box
+        assert 0 <= x and x + w <= g["width"] and 0 <= y and y + h <= g["height"]
+    # the dashboard composites the live pads over the printed map, pinned to it
+    src = _src("touchdesigner", "td_build.py")
+    dash = src[src.index("def build_dashboard("):src.index("def build_all(")]
+    assert '_install_callbacks(live, "apc_live_top.py")' in dash
+    assert "_set_res(lit, mw, mh)" in dash
+
+
+def test_the_layout_is_three_panes_and_never_breaks_a_build():
+    layout = _src("touchdesigner", "layout.py")
+    assert "def three_panel(" in layout
+    assert "NetworkEditor" in layout and layout.count('"Panel"') >= 2
+    # several spellings per call, because the pane API differs between builds
+    assert '"splitRight", "splitVertical"' in layout
+    assert "while len(ui.panes) > 1" in layout      # idempotent, not ever-thinner strips
+    src = _src("touchdesigner", "td_build.py")
+    assert "layout.three_panel(program=panels.get" in src
+    # the panes point at containers, since a pane cannot show a TOP directly
+    assert '"containerCOMP", nm' in src
+
+
+def test_nbody_is_luminous_and_feynman_can_be_brightened():
+    src = _src("touchdesigner", "td_build.py")
+    nbody = src[src.index("def build_nbody("):src.index("def build_particles(")]
+    assert '_instanced_geo(c, sim, "halo"' in nbody and 'look="soft"' in nbody
+    assert "_render(c, [geo, halo], cam, lights)" in nbody
+    assert '"shadowtype",), "soft"' in nbody           # bodies shadow each other
+    assert 'op(\'geo\').par.ry' in nbody               # the shell turns with them
+    import inspect
+    from physics.feynman import FeynmanShow
+    assert "gain" in inspect.signature(FeynmanShow.colours).parameters
+    cb = _src("touchdesigner", "callbacks", "feynman_chop.py")
+    assert 'appendFloat("Brightness"' in cb and "gain=float(" in cb
 
