@@ -15,6 +15,8 @@ raising during a build. :func:`three_panel` reports what it managed.
 """
 from __future__ import annotations
 
+import os
+
 
 def _td(name):
     """A TouchDesigner global, from inside an imported module (TD injects them
@@ -89,6 +91,14 @@ def three_panel(program=None, apc=None, ratio=0.58, verbose=True):
     set). Returns the panes it ended up with, or None if this build's pane API
     could not be driven.
     """
+    # A headless check has no window to lay out, and touching the pane API
+    # there is what hung the build: close() returned without shrinking the
+    # list and the collapse loop span forever. Never arrange panes when the
+    # run is going to quit anyway.
+    if os.environ.get("PHYSICSVJ_QUIT"):
+        if verbose:
+            print("[layout] headless run; panes left alone")
+        return None
     ui = _td("ui")
     if ui is None or not getattr(ui, "panes", None):
         if verbose:
@@ -96,11 +106,21 @@ def three_panel(program=None, apc=None, ratio=0.58, verbose=True):
         return None
     try:
         # Collapse to one pane first, so running this twice does not keep
-        # splitting the window into ever thinner strips.
-        while len(ui.panes) > 1:
+        # splitting the window into ever thinner strips. Bounded: if close()
+        # does not actually remove a pane -- which is exactly what stalled a
+        # build for five minutes -- give up rather than spin.
+        for _ in range(16):
+            if len(ui.panes) <= 1:
+                break
+            before = len(ui.panes)
             try:
                 ui.panes[-1].close()
             except Exception:
+                break
+            if len(ui.panes) >= before:
+                if verbose:
+                    print("[layout] panes will not close on this build; "
+                          "arranging what is there")
                 break
         left = ui.panes[0]
         _set_pane(left, "NetworkEditor", ratio=ratio)

@@ -1166,7 +1166,11 @@ def test_the_layout_is_three_panes_and_never_breaks_a_build():
     assert "NetworkEditor" in layout and layout.count('"Panel"') >= 2
     # several spellings per call, because the pane API differs between builds
     assert '"splitRight", "splitVertical"' in layout
-    assert "while len(ui.panes) > 1" in layout      # idempotent, not ever-thinner strips
+    # Idempotent (not ever-thinner strips) and BOUNDED: an unbounded collapse
+    # loop hung a build for five minutes when close() did not remove a pane.
+    assert "for _ in range(16)" in layout and "if len(ui.panes) >= before" in layout
+    # and no UI work at all in a headless run, which has no window to lay out
+    assert 'os.environ.get("PHYSICSVJ_QUIT")' in layout
     src = _src("touchdesigner", "td_build.py")
     assert "layout.three_panel(program=panels.get" in src
     # the panes point at containers: a Panel pane can only show a COMP that has
@@ -1192,3 +1196,48 @@ def test_nbody_is_luminous_and_feynman_can_be_brightened():
     cb = _src("touchdesigner", "callbacks", "feynman_chop.py")
     assert 'appendFloat("Brightness"' in cb and "gain=float(" in cb
 
+
+def test_the_report_only_cries_wolf_about_wires_that_really_missed():
+    """Connecting a COMP's output connector wires the Out TOP inside it, and
+    that inner operator is what TD reports as the input. Comparing paths
+    exactly reported every scene as unwired while the deck listed all of
+    them."""
+    src = _src("touchdesigner", "td_build.py")
+    connect = src[src.index("def _connect("):src.index("def _install_callbacks(")]
+    assert 'i.path.startswith(want + "/")' in connect
+
+
+def test_a_black_line_scene_is_not_given_a_lit_material():
+    """The remediation may only swap the material of an instanced point cloud.
+    Line art is drawn by a constant MAT carrying per-point colour; a lit
+    material makes it black, which is what the report showed happening."""
+    src = _src("touchdesigner", "td_build.py")
+    health = src[src.index("def _scene_health("):src.index("def _swap_material(")]
+    assert "instancing.eval()" in health and "instanced and hasattr" in health
+
+
+
+def test_the_ising_domains_are_never_a_white_screen():
+    """Both Ising domains stay dark, whichever way the invert is thrown.
+
+    Sampling the palette at 0.0/1.0 made the inverted (lit) domain the ramp's
+    brightest colour, and a domain covers about half the lattice -- the build
+    reported ``ising mean 0.951 ... range [0.000, 2.000]``, a white screen, in
+    a show that is meant to be dark. The fix samples inside the ends, so the
+    only real highlight left is the domain-wall glow.
+    """
+    import numpy as np
+
+    from physics import palette
+
+    src = _src("touchdesigner", "callbacks", "ising_top.py")
+    lit = re.search(r"palette\.colorize\(np\.array\(\[([\d.]+), ([\d.]+)\]", src)
+    assert lit, "the two domain colours are no longer sampled from the palette"
+    stops = np.array([float(lit.group(1)), float(lit.group(2))], dtype=np.float32)
+    assert stops.max() < 0.85, "a domain is sampled at the bright end of the ramp"
+
+    for name in palette.PALETTE_NAMES:
+        cols = palette.colorize(stops, name)
+        # A flat field of either domain has to leave headroom for the wall.
+        assert cols.mean(axis=1).max() < 0.62, (
+            "%s lights a domain too hot: %r" % (name, cols.mean(axis=1)))

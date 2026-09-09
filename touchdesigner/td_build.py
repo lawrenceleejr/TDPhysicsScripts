@@ -202,7 +202,12 @@ def _connect(src, dst, index=0):
         print(f"[td_build] could not connect {src.path} -> {dst.path}[{index}]: {e}")
         return False
     try:
-        wired = any(i is not None and i.path == src.path for i in dst.inputs)
+        # Connecting a COMP's output connector wires the Out TOP inside it, and
+        # that inner operator is what TD reports as the input -- so a scene COMP
+        # matches by prefix. Comparing paths exactly cried wolf on every scene.
+        want = src.path
+        wired = any(i is not None and (i.path == want or i.path.startswith(want + "/"))
+                    for i in dst.inputs)
     except Exception:
         return True                      # cannot check on this build; assume ok
     if not wired:
@@ -884,12 +889,24 @@ def build_nbody(dest=None, name="nbody", palette="inferno"):
     # ignores lights (constant MAT), so it reads through the dark side too.
     halo, _ = _instanced_geo(c, sim, "halo", (1.0, 0.62, 0.28), -260, -220,
                              look="soft", rows=10, cols=14)
-    _setpar_any(halo, ("scale",), 2.6, quiet=True)
+    # Grow the shell by its own *primitive*, not the Geometry COMP: scaling the
+    # COMP would scale the instance positions too and blow the cluster apart.
+    shell = halo.op("shape")
+    if shell is not None:
+        for pn in ("radx", "rady", "radz"):
+            _setpar_any(shell, (pn,), 2.6, quiet=True)
+        _setpar_any(shell, ("rad",), 2.6, quiet=True)
     _orbit(c, geo, default=7.0)
     _expr(halo, "ry", "op('geo').par.ry")      # the shell turns with the bodies
     cam = _camera(c, dist=26.0)
-    lights = _spot_rig(c, dest_reactor(dest), cone=17.0, delta=30.0,
-                       pos=(11.0, 13.0, 8.0), dimmer=14.0)
+    # The first cut of this measured 0.003 mean: a 17-degree cone over a wide
+    # cluster lit almost nothing, so the scene was an empty frame rather than a
+    # moody one. Wide beam, long soft shoulder, and a trace of ambient so a
+    # body outside it is a silhouette rather than absent.
+    lights = _spot_rig(c, dest_reactor(dest), cone=34.0, delta=44.0,
+                       pos=(11.0, 13.0, 8.0), dimmer=16.0)
+    for pn, v in (("ambr", 0.015), ("ambg", 0.016), ("ambb", 0.022)):
+        _setpar_any(mat, (pn,), v, quiet=True)
     # Bodies shadow each other in the beam: the cue that says "rendered".
     for L in lights:
         _setpar_any(L, ("shadowtype",), "soft", quiet=True)
@@ -1383,7 +1400,9 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
     # The window that goes to the other display, fed by the same TOP.
     win = _try_create(dest, "windowCOMP", "program_window", 200, -200)
     if win is not None:
-        _setpar_any(win, ("opcomp", "operator", "top"), target_path + "/out")
+        # The report said none of opcomp/operator/top exists on this build.
+        _setpar_any(win, ("winop", "opcomp", "operator", "top", "node", "comp",
+                          "operatorpath"), target_path + "/out")
         # Full screen on one display: 'monitor' sizing fills the chosen screen,
         # so the show needs no width or height of its own. Names vary by build,
         # hence the spellings; each logs if it misses.
@@ -1449,8 +1468,11 @@ def build_dashboard(dest=None, target=None, name="Dashboard", monitor=1):
         _connect(src, t)
         _set_res(t)
         _setpar_any(t, ("extend", "extendleft"), "black", quiet=True)
-        for pn, ex in ((("s1", "scalex"), scale_expr), (("s2", "scaley"), scale_expr),
-                       (("t1", "translatex"), tx_expr)):
+        # The report said s1/s2/t1 do not exist here; a Transform TOP names
+        # these differently between builds, so try the family.
+        for pn, ex in ((("s1", "sx", "scalex", "scale1"), scale_expr),
+                       (("s2", "sy", "scaley", "scale2"), scale_expr),
+                       (("t1", "tx", "translatex", "translate1"), tx_expr)):
             if isinstance(ex, str):
                 _bindexpr_any(t, pn, ex)
             else:
@@ -2578,7 +2600,16 @@ def _scene_health(outs):
             # Remedy 2: the other material family.
             if mean < 0.002:
                 geo = scene.op("geo")
-                if geo is not None and hasattr(geo.par, "material"):
+                # Only an instanced point cloud can be helped by a different
+                # material. Line art is drawn by a constant MAT carrying the
+                # per-point colour, and giving it a lit material makes it
+                # black -- which is what the report showed happening to LHC.
+                instanced = False
+                try:
+                    instanced = bool(int(geo.par.instancing.eval()))
+                except Exception:
+                    instanced = False
+                if geo is not None and instanced and hasattr(geo.par, "material"):
                     swapped = _swap_material(scene, geo)
                     if swapped:
                         try:

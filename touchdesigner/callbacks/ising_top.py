@@ -82,7 +82,13 @@ def onCook(scriptOp):
     # Spins are binary, so the colour map is a two-entry table, not an interp
     # over the whole lattice; the image is filled one channel at a time with
     # broadcast scalars, which is the cheapest way numpy writes an (H, W, 3).
-    lo, hi = palette.colorize(np.array([0.0, 1.0], dtype=np.float32), pal)
+    # Sample the ramp *inside* its ends, not at them. Taking the extremes made
+    # the lit domain the palette's brightest colour, and since a domain covers
+    # roughly half the lattice the frame came out at mean 0.95 -- a white
+    # screen, which is the opposite of what this show wants. A mid tone for the
+    # domain leaves the domain-wall glow as the only real highlight, which is
+    # also the part worth looking at.
+    lo, hi = palette.colorize(np.array([0.06, 0.62], dtype=np.float32), pal)
     if bool(_p(scriptOp, "Invert", True)):
         lo, hi = hi, lo               # the other domain is the lit one
     up = (sim.spins > 0).astype(np.float32)               # 1 where spin is +1
