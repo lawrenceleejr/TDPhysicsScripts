@@ -1163,8 +1163,14 @@ def test_the_layout_is_three_panes_and_never_breaks_a_build():
     assert "while len(ui.panes) > 1" in layout      # idempotent, not ever-thinner strips
     src = _src("touchdesigner", "td_build.py")
     assert "layout.three_panel(program=panels.get" in src
-    # the panes point at containers, since a pane cannot show a TOP directly
+    # the panes point at containers: a Panel pane can only show a COMP that has
+    # a panel, and PhysicsVJ is a Base COMP, which has none (aiming a pane at
+    # it draws an empty grey rectangle)
     assert '"containerCOMP", nm' in src
+    dash = src[src.index("def build_dashboard("):src.index("def build_all(")]
+    assert '"top", "background", "bgtop"' in dash
+    # and the build says out loud what to point a pane at
+    assert "to watch the show in a pane" in dash and "has no panel" in dash
 
 
 def test_nbody_is_luminous_and_feynman_can_be_brightened():
