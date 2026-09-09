@@ -989,15 +989,37 @@ def build_lhc(dest=None, name="lhc"):
     # one-pixel track over nine and darken it to nothing (this scene measured
     # exactly black with the pass in). Depth here comes from the tracks' own
     # colour and the bloom.
-    r = _render(c, [geo, readout], cam, None)
+    #
+    # Tracks and readout render SEPARATELY and are added. One Render TOP with
+    # both geometries in its Geometry parameter showed only the readout -- the
+    # tracks disappeared entirely -- and a pattern that silently matches one of
+    # two operators is not something to build a scene on. Two renders of line
+    # geometry are cheap, and they want different treatment anyway: the tracks
+    # take the trails, the readout must stay crisp.
+    r = _render(c, geo, cam, None)
+    hud_r = _render(c, readout, cam, None, name="render_hud", x=200, y=-200)
     tr = _trails(c, r, amount=0.0)
-    out = _glow(c, tr, size=12.0, x=640)
+    over = _create(c, "compositeTOP", "with_readout", 420, 0)
+    _setpar(over, "operand", "add")
+    _connect(hud_r, over, 0)
+    _connect(tr, over, 1)
+    _set_res(over)
+    out = _glow(c, over, size=12.0, x=640)
     _cook_driver(c, sim)
     try:
         sim.cook(force=True)
         hud_sop.cook(force=True)
     except Exception:
         pass
+    # Say how much geometry each half actually built. "The tracks vanished and
+    # only the labels are left" took a screenshot to notice; two numbers in the
+    # report make it obvious.
+    for label, sop in (("tracks", sim), ("readout", hud_sop)):
+        try:
+            print(f"[td_build] lhc {label}: {sop.numPoints} points, "
+                  f"{sop.numPrims} lines")
+        except Exception as e:
+            print(f"[td_build] lhc {label}: point count unreadable ({e})")
     # One driver per scene, so the readout is pulled by the same frame-start
     # hook: it follows the tracks only if it re-cooks every frame.
     drv = c.op("cook_driver")

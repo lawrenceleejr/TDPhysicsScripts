@@ -598,3 +598,54 @@ def test_open_data_event_is_a_whole_collision_not_just_the_pair():
     assert lead and min(lead) >= 2
     # switching it off leaves exactly the measured pair
     assert len(DimuonShow(underlying=0).tracks) == 2
+
+
+def test_a_punched_soft_body_comes_home():
+    """A punch is an internal deformation: the body should bulge as the
+    wavefront passes and settle back into its own shape once it has gone, in
+    place. It used to do neither -- the displacement was added to the particle
+    positions on every frame the wave was in flight, so it accumulated into a
+    permanent deformation, and its net push dragged the centre of mass across
+    the frame with it."""
+    body = ShapeMatchedSoftBody(n=600, seed=1)
+    rest_r = np.linalg.norm(body.rest - body.rest_cm, axis=1)
+
+    def shape_dev():
+        """How far the body is from its own rest shape, about its own centre."""
+        r = np.linalg.norm(body.pos - body.pos.mean(axis=0), axis=1)
+        return float(np.abs(r - rest_r).mean())
+
+    def drift():
+        return float(np.linalg.norm(body.pos.mean(axis=0)))
+
+    for _ in range(30):
+        body.step()
+    at_rest, started_at = shape_dev(), drift()
+    assert at_rest < 0.01 * body.radius
+
+    body.punch(1.0)
+    peak = 0.0
+    for _ in range(150):
+        body.step()
+        peak = max(peak, shape_dev())
+    # a hit you can see: a good fraction of the radius, not a twitch
+    assert 0.15 * body.radius < peak < 1.2 * body.radius, peak
+    assert not body._waves                       # the wave leaves the body
+
+    for _ in range(200):
+        body.step()
+    assert shape_dev() < 3.0 * at_rest + 1e-3    # ... and it comes home
+    assert drift() - started_at < 0.15 * body.radius   # without sailing away
+    assert np.isfinite(body.pos).all()
+
+    # Even a heavy hit stays bounded and still recovers.
+    body.punch(4.0)
+    big = 0.0
+    for _ in range(200):
+        body.step()
+        big = max(big, shape_dev())
+    assert big < 4.0 * body.radius
+    for _ in range(250):
+        body.step()
+    assert shape_dev() < 3.0 * at_rest + 1e-3
+    assert np.isfinite(body.pos).all()

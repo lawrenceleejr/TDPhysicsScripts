@@ -307,27 +307,44 @@ class ShapeMatchedSoftBody:
         d = d / (np.linalg.norm(d) + 1e-12)
         R = self.radius
         self._waves.append({
-            "dir": d, "pos": -1.8 * R, "amp": 1.15 * R * float(strength),
+            "dir": d, "pos": -1.8 * R, "amp": 0.85 * R * float(strength),
             "width": 0.38 * R, "speed": 3.1 * R,
         })
 
-    def _apply_waves(self, new: np.ndarray, p: np.ndarray, dt: float) -> np.ndarray:
-        """Displace ``new`` by every wave in flight and advance the waves."""
+    def _apply_waves(self, goal: np.ndarray, p: np.ndarray, dt: float) -> np.ndarray:
+        """Deform the *goal* shape by every wave in flight, and advance them.
+
+        This deforms the shape the body is trying to hold, not the body's
+        positions. That distinction is the whole behaviour: shape matching
+        moves the particles a fraction of the way toward the goal each step, so
+        while the wavefront is passing they chase a bulged shape, and the
+        moment it has gone by the goal is the rest shape again and they settle
+        back into it. Displacing the positions instead -- which is what this
+        did -- added the same push on every frame the wave was in flight, so a
+        punch accumulated into a permanent deformation and the body never came
+        home.
+        """
         if not self._waves:
-            return new
+            return goal
         norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
         radial = p / norm
+        disp = np.zeros_like(goal)
         for w in self._waves:
             along = p @ w["dir"]
             g = np.exp(-0.5 * ((along - w["pos"]) / w["width"]) ** 2)
             push = w["dir"][None, :] * 1.0 + radial * 0.85
-            new = new + (w["amp"] * g)[:, None] * push
+            disp += (w["amp"] * g)[:, None] * push
             w["pos"] += w["speed"] * dt
-            w["amp"] *= max(0.0, 1.0 - 0.22 * dt)
+            w["amp"] *= max(0.0, 1.0 - 0.30 * dt)
+        # Mean-free: a punch is an internal deformation, so it must not move the
+        # centre of mass. Without this the wavefront's net push accumulates into
+        # the goal's own centre every step and the body sails off across the
+        # frame instead of wobbling in place.
+        disp -= disp.mean(axis=0)
         R = self.radius
         self._waves = [w for w in self._waves
                        if w["pos"] < 2.2 * R and w["amp"] > 0.01 * R]
-        return new
+        return goal + disp
 
     def _best_fit_rotation(self, p: np.ndarray) -> np.ndarray:
         # Cross-covariance between current (centered) and rest positions.
@@ -370,6 +387,9 @@ class ShapeMatchedSoftBody:
         # way to the matched goal each step. This is unconditionally stable for
         # stiffness in [0, 1] -- the explicit-Euler spring it replaced
         # accumulated velocity and blew up to inf over a long run.
+        # A punch bulges the goal, so the body chases the deformed shape while
+        # the wavefront passes and relaxes into the rest shape once it is gone.
+        goal = self._apply_waves(goal, p, dt)
         prev = self.pos
         alpha = min(max(self.stiffness, 0.0), 1.0)
         new = self.pos + alpha * (goal - self.pos)
@@ -381,7 +401,6 @@ class ShapeMatchedSoftBody:
             jitter = self._noise.noise(self.pos * 0.5 + (self.t % 256.0) * 0.3)
             norm = np.linalg.norm(p, axis=1, keepdims=True) + 1e-6
             new = new + (self.wobble * dt) * jitter[:, None] * (p / norm)
-        new = self._apply_waves(new, p, dt)
         # Derived velocity (for speeds()/colour), with damping.
         self.vel = (1.0 - self.damping) * (new - prev) / dt
         self.pos = new
